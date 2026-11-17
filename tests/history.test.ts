@@ -19,7 +19,7 @@ describe("history (node:sqlite)", () => {
     process.env.HISTORY_DB_PATH = join(dir, "sub", "h.db");
     _resetHistoryForTests();
     expect(historyEnabled()).toBe(true);
-    const base = { profileUrl: "https://pump.fun/profile/x", evidence: [], confidence: "high" as const, reason: "r" };
+    const base = { profileUrl: "https://pump.fun/profile/x", evidence: [], confidence: "high" as const, reason: "r", method: "official-api" as const };
     recordCheck({ ...base, username: "mrnom", status: "taken", checkedAt: "2026-01-01T00:00:00Z", wallet: "W" });
     recordCheck({ ...base, username: "mrfree", status: "available", checkedAt: "2026-01-02T00:00:00Z" });
     expect(listHistory().map((r) => r.username)).toEqual(["mrfree", "mrnom"]);

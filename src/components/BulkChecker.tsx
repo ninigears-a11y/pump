@@ -6,7 +6,9 @@ import { parseUsernameList, validateUsername } from "@/lib/checker/username";
 import { useBulk } from "@/lib/client/bulk";
 import { profileUrlFor } from "@/lib/client/api";
 import { store, useStore } from "@/lib/client/store";
-import { copyText, downloadFile, timeAgo } from "@/lib/client/util";
+import { copyText, downloadFile } from "@/lib/client/util";
+import { CheckedLabel, DiagnosticBox } from "./Diagnostics";
+import { verifiedAtOf } from "@/lib/client/api";
 import { toCsv } from "@/lib/csv";
 import type { CheckStatus } from "@/lib/checker/types";
 import { Button, Card, CardHeader, Field, Segmented, StatusBadge, cx, useToast } from "./ui";
@@ -63,8 +65,18 @@ export function BulkChecker() {
     const data = rows.filter((r) => r.result);
     if (!data.length) return toast("Nothing to export yet");
     const csv = toCsv(
-      ["username", "status", "confidence", "profile_url", "last_checked", "reason"],
-      data.map(({ result: r }) => [r!.username, r!.status, r!.confidence, r!.profileUrl, r!.checkedAt, r!.reason]),
+      ["username", "status", "verified_at", "attempted_at", "method", "confidence", "profile_url", "diagnostic_code", "details"],
+      data.map(({ result: r }) => [
+        r!.username,
+        r!.status,
+        verifiedAtOf(r!) ?? "",
+        r!.checkedAt,
+        r!.method ?? "",
+        r!.confidence === "none" ? "" : r!.confidence,
+        r!.profileUrl,
+        r!.diagnostic?.code ?? "",
+        r!.diagnostic?.message ?? r!.reason,
+      ]),
     );
     downloadFile(`pump-usernames-${new Date().toISOString().slice(0, 10)}.csv`, csv);
   }
@@ -169,6 +181,14 @@ export function BulkChecker() {
           </div>
 
           <div className="flex min-w-0 flex-col">
+            {bulk.blocked && (
+              <div className="mb-3">
+                <p className="mb-2 text-[13px] font-semibold text-unknown">
+                  Paused: this problem would make every remaining check Unknown.
+                </p>
+                <DiagnosticBox d={bulk.blocked} compact />
+              </div>
+            )}
             <div className="mb-3">
               <div className="mb-2 flex items-center justify-between text-[12px] text-muted">
                 <span className="flex items-center gap-2">
@@ -235,13 +255,16 @@ export function BulkChecker() {
                       </a>
                       <div className="flex shrink-0 items-center gap-3">
                         {r.result && !r.checking && (
-                          <span className="hidden text-[11px] text-subtle sm:inline">{timeAgo(r.result.checkedAt)}</span>
+                          <CheckedLabel r={r.result} className="hidden text-[11px] text-subtle sm:inline" />
                         )}
                         {r.checking ? (
                           <StatusBadge status="checking" />
                         ) : r.result ? (
-                          <span title={r.result.reason}>
+                          <span title={r.result.diagnostic?.message ?? r.result.reason} className="flex flex-col items-end gap-0.5">
                             <StatusBadge status={r.result.status} />
+                            {r.result.status === "unknown" && r.result.diagnostic && (
+                              <span className="text-[11px] font-medium text-unknown">{r.result.diagnostic.label}</span>
+                            )}
                           </span>
                         ) : (
                           <span className="text-[11px] font-medium uppercase tracking-wide text-subtle">Queued</span>

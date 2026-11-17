@@ -47,7 +47,7 @@ export function decideVerdict({ official, api, apiConfirm, page, strict }: Verdi
   if (!api) {
     return {
       status: "unknown",
-      confidence: "low",
+      confidence: "none",
       reason: official ? `Official API inconclusive: ${official.detail}` : "No verification source was available.",
     };
   }
@@ -78,7 +78,7 @@ export function decideVerdict({ official, api, apiConfirm, page, strict }: Verdi
     if (strict) {
       return {
         status: "unknown",
-        confidence: "low",
+        confidence: "none",
         reason: `Unofficial API reports no user, but strict mode needs the profile page to confirm (${page ? page.detail : "page check skipped"}).${officialNote}`,
       };
     }
@@ -94,14 +94,14 @@ export function decideVerdict({ official, api, apiConfirm, page, strict }: Verdi
   if (api.outcome === "not_found" && apiConfirm && apiConfirm.outcome !== "not_found") {
     return {
       status: "unknown",
-      confidence: "low",
+      confidence: "none",
       reason: `Confirmation request failed: ${apiConfirm.detail}${officialNote}`,
     };
   }
 
   if (api.outcome === "not_found" && !apiConfirm) {
-    return { status: "unknown", confidence: "low", reason: "Availability not confirmed by a second request." };
+    return { status: "unknown", confidence: "none", reason: "Availability not confirmed by a second request." };
   }
 
-  return { status: "unknown", confidence: "low", reason: `${api.detail}${officialNote}` };
+  return { status: "unknown", confidence: "none", reason: `${api.detail}${officialNote}` };
 }

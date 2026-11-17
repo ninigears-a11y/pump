@@ -107,9 +107,10 @@ describe("UsernameChecker with official API", () => {
 });
 
 describe("checkerFromEnv", () => {
-  it("uses the official API only when PUMP_API_KEY is set", () => {
-    expect(checkerFromEnv({}).mode).toBe("unofficial");
-    expect(checkerFromEnv({ PUMP_API_KEY: "  " }).mode).toBe("unofficial");
+  it("uses the official API only when PUMP_API_KEY is set; unofficial sources are opt-in", () => {
+    expect(checkerFromEnv({}).mode).toBe("unconfigured");
+    expect(checkerFromEnv({ PUMP_API_KEY: "  " }).mode).toBe("unconfigured");
+    expect(checkerFromEnv({ PUMP_UNOFFICIAL_FALLBACK: "1" }).mode).toBe("unofficial");
     expect(checkerFromEnv({ PUMP_API_KEY: "pf_live_x" }).mode).toBe("official");
   });
   it("defaults profile URLs to /profile/", () => {

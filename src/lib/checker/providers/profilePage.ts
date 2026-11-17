@@ -1,5 +1,5 @@
 import type { Evidence, EvidenceProvider, ProviderContext } from "../types";
-import { isChallengeResponse, parseRetryAfter, safeFetch } from "../http";
+import { failureCode, isChallengeResponse, parseRetryAfter, safeFetch } from "../http";
 
 export const DEFAULT_PROFILE_BASE = "https://pump.fun/profile";
 
@@ -37,7 +37,7 @@ export class ProfilePageProvider implements EvidenceProvider {
     });
     const base = { source: this.name, url, durationMs: res.durationMs };
     if (!res.ok || !res.response) {
-      return { ...base, outcome: "error", detail: res.error ?? "Network error" };
+      return { ...base, outcome: "error", detail: res.error ?? "Network error", code: failureCode(res) };
     }
     return classifyPageResponse(username, res.response, res.body ?? "", base);
   }
@@ -62,6 +62,7 @@ export function classifyPageResponse(
     outcome,
     detail,
     httpStatus: status,
+    code: autoCode(outcome, detail, status),
     ...extra,
   });
 
@@ -105,4 +106,21 @@ export function classifyPageResponse(
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function autoCode(outcome: Evidence["outcome"], detail: string, status: number): Evidence["code"] {
+  switch (outcome) {
+    case "found":
+    case "not_found":
+    case "skipped":
+      return undefined;
+    case "rate_limited":
+      return "RATE_LIMITED";
+    case "blocked":
+      return /cloudflare|challenge/i.test(detail) ? "CLOUDFLARE_BLOCKED" : "ACCESS_DENIED";
+    case "error":
+      return status >= 500 ? "UPSTREAM_UNAVAILABLE" : "NETWORK_ERROR";
+    default:
+      return "UNEXPECTED_RESPONSE";
+  }
 }

@@ -1,7 +1,8 @@
 export * from "./types";
 export * from "./username";
+export { makeDiagnostic, diagnosticFromEvidence } from "./diagnostics";
 export { decideVerdict } from "./verdict";
-export { UsernameChecker, checkerFromEnv, getChecker, type VerificationMode } from "./service";
+export { UsernameChecker, checkerFromEnv, getChecker, type VerificationMode, type ProbeResult } from "./service";
 export { OfficialApiProvider, classifyOfficialResponse } from "./providers/officialApi";
 export { FrontendApiProvider, classifyApiResponse } from "./providers/frontendApi";
 export { ProfilePageProvider, classifyPageResponse } from "./providers/profilePage";

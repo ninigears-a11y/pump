@@ -1,5 +1,6 @@
 import type { Evidence, EvidenceProvider, ProviderContext } from "../types";
-import { isChallengeResponse, parseRetryAfter, safeFetch, tryParseJson } from "../http";
+import { failureCode, isChallengeResponse, parseRetryAfter, safeFetch, tryParseJson } from "../http";
+import type { DiagnosticCode } from "../types";
 
 export const DEFAULT_OFFICIAL_API_BASE = "https://api.pump.fun/v1";
 
@@ -42,12 +43,13 @@ export class OfficialApiProvider implements EvidenceProvider {
       signal: ctx.signal,
     });
     const base = { source: this.name, url, durationMs: res.durationMs };
-    if (!res.ok || !res.response) return { ...base, outcome: "error", detail: res.error ?? "Network error" };
+    if (!res.ok || !res.response) return { ...base, outcome: "error", detail: res.error ?? "Network error", code: failureCode(res) };
     return classifyOfficialResponse(res.response, res.body ?? "", base);
   }
 }
 
 const KEY_PROBLEMS: Record<string, string> = {
+  API_KEY_RATE_LIMITED: "The key's rate limit was reached.",
   API_KEY_REQUIRED: "No API key was sent.",
   API_KEY_INVALID: "The configured API key is invalid.",
   API_KEY_REVOKED: "The configured API key has been revoked.",
@@ -64,11 +66,13 @@ export function classifyOfficialResponse(
   base: Pick<Evidence, "source"> & Partial<Evidence> = { source: "pump-official-api" },
 ): Evidence {
   const status = response.status;
+  const requestId = response.headers.get("x-request-id") ?? undefined;
   const e = (outcome: Evidence["outcome"], detail: string, extra: Partial<Evidence> = {}): Evidence => ({
     ...base,
     outcome,
     detail,
     httpStatus: status,
+    requestId,
     ...extra,
   });
   const parsed = tryParseJson(body.trim());
@@ -78,20 +82,32 @@ export function classifyOfficialResponse(
       : undefined;
 
   if (status === 429) {
-    return e("rate_limited", "Official API rate limit reached (HTTP 429).", { retryAfterSec: parseRetryAfter(response) });
+    return e("rate_limited", "Official API rate limit reached (HTTP 429).", {
+      retryAfterSec: parseRetryAfter(response),
+      code: "RATE_LIMITED",
+    });
+  }
+  // A Cloudflare challenge is not Pump.fun's JSON error envelope; detect it first.
+  if (typeof errCode !== "string" && isChallengeResponse(response, body)) {
+    return e("blocked", `Request was blocked by Cloudflare before reaching the API (HTTP ${status}).`, { code: "CLOUDFLARE_BLOCKED" });
   }
   if (status === 401 || status === 403 || status === 400) {
     const code = typeof errCode === "string" ? errCode : undefined;
-    return e("blocked", `Official API refused the request${code ? ` (${code})` : ""}: ${(code && KEY_PROBLEMS[code]) || `HTTP ${status}.`}`);
+    return e("blocked", `Official API refused the request${code ? ` (${code})` : ""}: ${(code && KEY_PROBLEMS[code]) || `HTTP ${status}.`}`, {
+      code: code && code in KEY_PROBLEMS ? (code as DiagnosticCode) : "ACCESS_DENIED",
+    });
   }
-  if (isChallengeResponse(response, body)) return e("blocked", `Official API request was challenged (HTTP ${status}).`);
-  if (status >= 500) return e("error", `Official API unavailable (HTTP ${status}).`, { retryAfterSec: parseRetryAfter(response) });
-  if (status !== 200) return e("ambiguous", `Unexpected HTTP ${status} from the official API.`);
-  if (!parsed.ok || !parsed.value || typeof parsed.value !== "object") {
-    return e("ambiguous", "Official API returned a response that is not the documented JSON object.");
+  if (status >= 500)
+    return e("error", `Official API unavailable (HTTP ${status}).`, {
+      retryAfterSec: parseRetryAfter(response),
+      code: "UPSTREAM_UNAVAILABLE",
+    });
+  if (status !== 200) return e("ambiguous", `Unexpected HTTP ${status} from the official API.`, { code: "UNEXPECTED_RESPONSE" });
+  if (!parsed.ok || !parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+    return e("ambiguous", "Official API returned a response that is not the documented JSON object.", { code: "UNEXPECTED_RESPONSE" });
   }
   const flag = (parsed.value as Record<string, unknown>).exists_flag;
   if (flag === true) return e("found", "Official Pump.fun API: this username is already reserved (exists_flag = true).");
   if (flag === false) return e("not_found", "Official Pump.fun API: this username is not reserved (exists_flag = false).");
-  return e("ambiguous", "Official API response has no boolean exists_flag.");
+  return e("ambiguous", "Official API response has no boolean exists_flag.", { code: "UNEXPECTED_RESPONSE" });
 }

@@ -56,7 +56,7 @@ Each provider returns one `Evidence` record: `found`, `not_found`, `blocked`, `r
 
 **Verdict rules** (`verdict.ts`, with exhaustive tests):
 
-0. **Official API configured:** `exists_flag: false` gives **AVAILABLE** (high) and `exists_flag: true` gives **TAKEN** (high), from a single request. Any other answer (invalid, revoked or unapproved key, scope or region refusal, 429, 5xx, an unexpected shape) is inconclusive, and the engine falls back to the rules below. Set `PUMP_UNOFFICIAL_FALLBACK=0` to return UNKNOWN instead.
+0. **Official API (the default and only recommended method):** `exists_flag: false` gives **AVAILABLE** (high) and `exists_flag: true` gives **TAKEN** (high), from a single request. Any other answer (invalid, revoked or unapproved key, scope or region refusal, Cloudflare, 429, 5xx, timeouts, an unexpected shape) is **UNKNOWN** with a diagnostic. Rules 1–3 below apply only when `PUMP_UNOFFICIAL_FALLBACK=1`.
 1. If any source positively identifies the profile, the result is **TAKEN**. If the sources disagree, the result is still TAKEN, because that is the safe answer.
 2. **AVAILABLE** needs the API to return a clean `not_found` on **two separate requests**, and the profile page must not contradict that.
    - If the page also returns `not_found`, confidence is **high**.
@@ -65,7 +65,7 @@ Each provider returns one `Evidence` record: `found`, `not_found`, `blocked`, `r
 
 ### Limitations (please read)
 
-- **Without `PUMP_API_KEY`** the app runs in *unofficial* mode. The site shows an orange notice, and on cloud hosts most results will be UNKNOWN.
+- **`PUMP_API_KEY` is required for real checks.** Without it the app makes **no** requests to Pump.fun, and every result is UNKNOWN with the diagnostic `OFFICIAL_API_KEY_MISSING`. The page shows setup steps. The unofficial, Cloudflare-protected sources are off by default (`PUMP_UNOFFICIAL_FALLBACK=1` turns them on, which is not recommended).
 
 - **Cloudflare decides whether checks work.** On many cloud hosts, Vercel included, Pump.fun may challenge every request, and then results will mostly be UNKNOWN. That is the honest result, not a bug. You will usually get better results running locally on a residential connection. The app never tries to evade the challenge.
 - **The API is undocumented.** It can change without notice. The classifier fails safe (unexpected shapes become UNKNOWN), and the provider can be swapped (see *Extending*).
@@ -114,7 +114,7 @@ Every variable is optional. See `.env.example`.
 | `PUMP_API_BASE` | `https://frontend-api-v3.pump.fun` | Base URL of the user lookup API |
 | `PUMP_API_KEY` | *(unset)* | **Official Pump.fun API key** (`pf_live_…`). Server-side only. Never prefix it with `NEXT_PUBLIC_`. |
 | `PUMP_OFFICIAL_API_BASE` | `https://api.pump.fun/v1` | Official API base (devnet: `https://api-devnet.pump.fun/v1`) |
-| `PUMP_UNOFFICIAL_FALLBACK` | `1` | `0` returns UNKNOWN whenever the official API is inconclusive |
+| `PUMP_UNOFFICIAL_FALLBACK` | `0` | Opt-in. `1` also tries the unofficial, Cloudflare-protected sources (not recommended) |
 | `PUMP_PROFILE_BASE` | `https://pump.fun/profile` | Profile URL base (links and page corroboration) |
 | `PUMP_MIN_REQUEST_INTERVAL_MS` | `400` | Minimum gap between outbound requests per provider, per server instance |
 | `PUMP_REQUEST_TIMEOUT_MS` | `10000` | Per-request timeout |
@@ -145,7 +145,22 @@ Other endpoints:
 
 - `GET /api/history?limit=200&username=` returns the server-side history, or `{ enabled: false }` when no database is configured.
 - `DELETE /api/history` clears it.
-- `GET /api/health` is a health check. It reports `verification: "official" | "unofficial"` and never exposes the key.
+- `GET /api/health` reports `verification: "official" | "unofficial" | "unconfigured"` and never exposes the key.
+- `GET /api/health?probe=1` also makes **one real request** to the official API, at most once a minute, and reports `probe.ok` or a diagnostic. The page's status banner uses it.
+
+### Result fields and diagnostics
+
+- `checkedAt` is when the check was attempted. `verifiedAt` is set **only** for AVAILABLE or TAKEN. The UI says "Verified 2m ago" only when something was verified, and "Not verified · tried 2m ago" otherwise.
+- `confidence` is `"none"` for UNKNOWN. `method` is `"official-api"`, `"unofficial"` or `"none"`.
+- An UNKNOWN result carries `diagnostic: { code, label, message, fix, blocking, httpStatus?, requestId? }`. The codes are:
+  - `OFFICIAL_API_KEY_MISSING`
+  - `API_KEY_REQUIRED`, `API_KEY_INVALID`, `API_KEY_REVOKED`
+  - `API_ORG_NOT_APPROVED`, `API_ORG_SUSPENDED`
+  - `API_SCOPE_FORBIDDEN`, `API_REGION_RESTRICTED`, `API_CREDENTIAL_NOT_ALLOWED`
+  - `RATE_LIMITED`, `TIMEOUT`, `NETWORK_ERROR`, `UPSTREAM_UNAVAILABLE`
+  - `CLOUDFLARE_BLOCKED`, `ACCESS_DENIED`, `UNEXPECTED_RESPONSE`
+  - `INVALID_USERNAME`, `CANCELLED`, `CHECKER_UNREACHABLE`, `LOCAL_RATE_LIMIT`
+- `blocking: true` means every check will fail the same way until the configuration changes. The bulk checker pauses automatically when that happens.
 
 Bulk checks are orchestrated **in the browser** (`src/lib/bulkQueue.ts`), one `/api/check` call per name. That keeps every serverless invocation short and makes pause/resume trivial. The server-side throttle and the per-IP limit stop the browser from overrunning Pump.fun. When a result reports rate limiting, the bulk queue backs off automatically.
 

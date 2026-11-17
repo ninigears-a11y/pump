@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Layers, Search, ShieldCheck, Wand2 } from "lucide-react";
+import { useCallback, useState } from "react";
+import { Layers, Search, ShieldCheck, Wand2 } from "lucide-react";
+import { SetupStatus } from "./Diagnostics";
 import { BulkProvider, useBulk } from "@/lib/client/bulk";
 import { BulkChecker } from "./BulkChecker";
 import { Generator } from "./Generator";
@@ -28,20 +29,8 @@ export function Dashboard() {
   );
 }
 
-function useVerificationMode() {
-  const [mode, setMode] = useState<"official" | "unofficial" | null>(null);
-  useEffect(() => {
-    fetch("/api/health", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d: { verification?: "official" | "unofficial" }) => setMode(d.verification ?? null))
-      .catch(() => setMode(null));
-  }, []);
-  return mode;
-}
-
 function Inner({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
   const bulk = useBulk();
-  const mode = useVerificationMode();
 
   return (
     <div
@@ -50,32 +39,16 @@ function Inner({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
     >
       <header className="mb-8 flex flex-col gap-6 sm:mb-10 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          {mode === "official" ? (
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-avail-line bg-avail-bg px-3 py-1 text-[12px] font-medium text-avail">
-              <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
-              Verified with the official Pump.fun API
-            </div>
-          ) : (
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-[12px] font-medium text-muted">
-              <ShieldCheck className="h-3.5 w-3.5 text-avail" aria-hidden />
-              Evidence-based checks · never guesses
-            </div>
-          )}
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-[12px] font-medium text-muted">
+            <ShieldCheck className="h-3.5 w-3.5 text-avail" aria-hidden />
+            Evidence-based checks · never guesses
+          </div>
           <h1 className="text-[32px] font-semibold leading-tight tracking-[-0.03em] sm:text-[44px]">Pump Username Checker</h1>
           <p className="mt-2 text-[15px] text-muted sm:text-lg">Find your next identity on Pump.fun.</p>
         </div>
       </header>
 
-      {mode === "unofficial" && (
-        <div className="mb-6 flex gap-3 rounded-2xl border border-unknown-line bg-unknown-bg/60 p-4 text-[13px] leading-5 text-ink/80">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-unknown" aria-hidden />
-          <p>
-            <b className="font-semibold text-ink">Official Pump.fun API key not configured.</b> Checks use Pump.fun&apos;s
-            public pages, which Cloudflare often blocks for servers, so many results may be <b>Unknown</b>. Nothing is
-            ever marked available without evidence.
-          </p>
-        </div>
-      )}
+      <SetupStatus />
 
       <StatsBar />
 

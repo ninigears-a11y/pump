@@ -1,5 +1,6 @@
 import type { Evidence, EvidenceProvider, ProviderContext } from "../types";
 import {
+  failureCode,
   isChallengeResponse,
   isJsonContentType,
   parseRetryAfter,
@@ -50,7 +51,7 @@ export class FrontendApiProvider implements EvidenceProvider {
     const base = { source: this.name, url, durationMs: res.durationMs };
 
     if (!res.ok || !res.response) {
-      return { ...base, outcome: "error", detail: res.error ?? "Network error" };
+      return { ...base, outcome: "error", detail: res.error ?? "Network error", code: failureCode(res) };
     }
     return classifyApiResponse(username, res.response, res.body ?? "", base);
   }
@@ -68,6 +69,7 @@ export function classifyApiResponse(
     outcome,
     detail,
     httpStatus: status,
+    code: autoCode(outcome, detail, status),
     ...extra,
   });
 
@@ -155,4 +157,21 @@ function extractMessage(v: unknown): string | undefined {
 
 export function shortWallet(a: string): string {
   return a.length > 10 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a;
+}
+
+function autoCode(outcome: Evidence["outcome"], detail: string, status: number): Evidence["code"] {
+  switch (outcome) {
+    case "found":
+    case "not_found":
+    case "skipped":
+      return undefined;
+    case "rate_limited":
+      return "RATE_LIMITED";
+    case "blocked":
+      return /cloudflare|challenge/i.test(detail) ? "CLOUDFLARE_BLOCKED" : "ACCESS_DENIED";
+    case "error":
+      return status >= 500 ? "UPSTREAM_UNAVAILABLE" : "NETWORK_ERROR";
+    default:
+      return "UNEXPECTED_RESPONSE";
+  }
 }

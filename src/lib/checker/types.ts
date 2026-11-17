@@ -9,7 +9,50 @@
 
 export type CheckStatus = "available" | "taken" | "unknown";
 
-export type Confidence = "high" | "medium" | "low";
+/** "none" is used for UNKNOWN: nothing was verified, so there is no confidence. */
+export type Confidence = "high" | "medium" | "low" | "none";
+
+/** Which verification method produced a definite answer. */
+export type VerificationMethod = "official-api" | "unofficial" | "none";
+
+/** Machine-readable reason a username could not be verified. See diagnostics.ts. */
+export type DiagnosticCode =
+  | "OFFICIAL_API_KEY_MISSING"
+  | "API_KEY_REQUIRED"
+  | "API_KEY_INVALID"
+  | "API_KEY_REVOKED"
+  | "API_ORG_NOT_APPROVED"
+  | "API_ORG_SUSPENDED"
+  | "API_SCOPE_FORBIDDEN"
+  | "API_REGION_RESTRICTED"
+  | "API_CREDENTIAL_NOT_ALLOWED"
+  | "RATE_LIMITED"
+  | "TIMEOUT"
+  | "NETWORK_ERROR"
+  | "UPSTREAM_UNAVAILABLE"
+  | "CLOUDFLARE_BLOCKED"
+  | "ACCESS_DENIED"
+  | "UNEXPECTED_RESPONSE"
+  | "INVALID_USERNAME"
+  | "CANCELLED"
+  | "CHECKER_UNREACHABLE"
+  | "LOCAL_RATE_LIMIT";
+
+export interface Diagnostic {
+  code: DiagnosticCode;
+  /** Short label for compact UI (e.g. a table cell). */
+  label: string;
+  /** What went wrong, in plain words. */
+  message: string;
+  /** What to do about it. */
+  fix: string;
+  /** True when every check will fail the same way until configuration changes. */
+  blocking: boolean;
+  source?: string;
+  httpStatus?: number;
+  /** Pump.fun's X-Request-Id, useful for support tickets. */
+  requestId?: string;
+}
 
 /** What a single source told us about a username. */
 export type EvidenceOutcome =
@@ -37,6 +80,9 @@ export interface Evidence {
   wallet?: string;
   /** Seconds to wait before retrying, when the source sent Retry-After. */
   retryAfterSec?: number;
+  /** Machine-readable failure code (set on inconclusive outcomes). */
+  code?: DiagnosticCode;
+  requestId?: string;
   url?: string;
   durationMs?: number;
 }
@@ -48,7 +94,13 @@ export interface CheckResult {
   /** Human-readable explanation of the verdict. */
   reason: string;
   profileUrl: string;
+  /** When the check was attempted. */
   checkedAt: string;
+  /** When the status was actually verified. Only set for available/taken. */
+  verifiedAt?: string;
+  method: VerificationMethod;
+  /** Why the username could not be verified. Only set for unknown. */
+  diagnostic?: Diagnostic;
   wallet?: string;
   evidence: Evidence[];
   cached?: boolean;

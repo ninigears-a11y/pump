@@ -12,6 +12,9 @@ export interface HistoryRow {
   reason: string;
   wallet: string | null;
   checked_at: string;
+  verified_at: string | null;
+  method: string | null;
+  diagnostic_code: string | null;
 }
 
 interface Db {
@@ -44,6 +47,13 @@ function open(): Db | null {
     );
     CREATE INDEX IF NOT EXISTS idx_checks_username ON checks(username);
     CREATE INDEX IF NOT EXISTS idx_checks_checked_at ON checks(checked_at);`);
+    for (const col of ["verified_at TEXT", "method TEXT", "diagnostic_code TEXT"]) {
+      try {
+        d.exec(`ALTER TABLE checks ADD COLUMN ${col}`);
+      } catch {
+        /* column already exists */
+      }
+    }
     db = d;
   } catch (err) {
     console.warn("[history] SQLite unavailable, history disabled:", err instanceof Error ? err.message : err);
@@ -61,8 +71,18 @@ export function recordCheck(r: CheckResult): void {
   if (!d) return;
   try {
     d.prepare(
-      "INSERT INTO checks (username, status, confidence, reason, wallet, checked_at) VALUES (?, ?, ?, ?, ?, ?)",
-    ).run(r.username, r.status, r.confidence, r.reason, r.wallet ?? null, r.checkedAt);
+      "INSERT INTO checks (username, status, confidence, reason, wallet, checked_at, verified_at, method, diagnostic_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      r.username,
+      r.status,
+      r.confidence,
+      r.reason,
+      r.wallet ?? null,
+      r.checkedAt,
+      r.verifiedAt ?? null,
+      r.method,
+      r.diagnostic?.code ?? null,
+    );
   } catch (err) {
     console.warn("[history] insert failed:", err);
   }
@@ -74,11 +94,11 @@ export function listHistory(opts: { limit?: number; username?: string } = {}): H
   const limit = Math.min(1000, Math.max(1, opts.limit ?? 200));
   if (opts.username) {
     return d
-      .prepare("SELECT username, status, confidence, reason, wallet, checked_at FROM checks WHERE username = ? ORDER BY id DESC LIMIT ?")
+      .prepare("SELECT username, status, confidence, reason, wallet, checked_at, verified_at, method, diagnostic_code FROM checks WHERE username = ? ORDER BY id DESC LIMIT ?")
       .all(opts.username, limit) as HistoryRow[];
   }
   return d
-    .prepare("SELECT username, status, confidence, reason, wallet, checked_at FROM checks ORDER BY id DESC LIMIT ?")
+    .prepare("SELECT username, status, confidence, reason, wallet, checked_at, verified_at, method, diagnostic_code FROM checks ORDER BY id DESC LIMIT ?")
     .all(limit) as HistoryRow[];
 }
 

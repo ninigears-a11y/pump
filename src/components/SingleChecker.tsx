@@ -5,7 +5,8 @@ import { AtSign, Copy, ExternalLink, RotateCw, Search, Star } from "lucide-react
 import { checkUsername } from "@/lib/client/api";
 import { store, useStore } from "@/lib/client/store";
 import { normalizeUsername, validateUsername } from "@/lib/checker/username";
-import { copyText, timeAgo } from "@/lib/client/util";
+import { copyText } from "@/lib/client/util";
+import { CheckedLabel, DiagnosticBox, methodLabel } from "./Diagnostics";
 import { Button, Card, CardHeader, IconButton, StatusBadge, cx, useToast } from "./ui";
 import { Suggestions } from "./Suggestions";
 import { EvidenceList } from "./EvidenceList";
@@ -93,10 +94,18 @@ export function SingleChecker() {
           <div className={cx("mt-5 rounded-xl border p-5", STATUS_COPY[result.status].tone)}>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   {loading ? <StatusBadge status="checking" size="lg" /> : <StatusBadge status={result.status} size="lg" />}
                   <span className="text-[12px] text-muted">
-                    {result.confidence} confidence · verified {timeAgo(result.checkedAt)}
+                    {result.status === "unknown" ? (
+                      <CheckedLabel r={result} />
+                    ) : (
+                      <>
+                        <CheckedLabel r={result} />
+                        {methodLabel(result) ? ` · ${methodLabel(result)}` : ""}
+                        {result.confidence !== "none" ? ` · ${result.confidence} confidence` : ""}
+                      </>
+                    )}
                     {result.cached ? " · cached" : ""}
                   </span>
                 </div>
@@ -104,7 +113,7 @@ export function SingleChecker() {
                   <span className="font-mono">{result.username}</span>{" "}
                   <span className="whitespace-nowrap font-sans font-normal text-muted">{STATUS_COPY[result.status].title}</span>
                 </p>
-                <p className="mt-1.5 text-sm text-ink/70">{result.reason}</p>
+                {result.status !== "unknown" && <p className="mt-1.5 text-sm text-ink/70">{result.reason}</p>}
               </div>
               <div className="flex items-center gap-1">
                 {result.status === "available" && (
@@ -133,6 +142,15 @@ export function SingleChecker() {
                 </IconButton>
               </div>
             </div>
+            {result.status === "unknown" && (
+              <div className="mt-4">
+                {result.diagnostic ? (
+                  <DiagnosticBox d={result.diagnostic} />
+                ) : (
+                  <p className="text-[13px] text-unknown">{result.reason}</p>
+                )}
+              </div>
+            )}
             <button
               onClick={() => setShowDetails((s) => !s)}
               className="mt-4 text-[12px] font-medium text-muted underline-offset-2 hover:text-ink hover:underline"
@@ -145,11 +163,7 @@ export function SingleChecker() {
               </div>
             )}
             {result.status === "taken" && <Suggestions username={result.username} />}
-            {result.status === "unknown" && (
-              <p className="mt-4 text-[13px] text-unknown">
-                We never guess. Try rechecking in a moment, or open the profile on Pump.fun to verify manually.
-              </p>
-            )}
+
           </div>
         ) : null)}
       </div>

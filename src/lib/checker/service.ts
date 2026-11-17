@@ -3,11 +3,26 @@ import { FrontendApiProvider, DEFAULT_API_BASE } from "./providers/frontendApi";
 import { ProfilePageProvider, DEFAULT_PROFILE_BASE } from "./providers/profilePage";
 import { OfficialApiProvider, DEFAULT_OFFICIAL_API_BASE } from "./providers/officialApi";
 import { OutboundThrottle } from "./rateLimiter";
-import type { CheckOptions, CheckResult, Evidence, EvidenceProvider, FetchLike } from "./types";
+import type { CheckOptions, CheckResult, Diagnostic, Evidence, EvidenceProvider, FetchLike } from "./types";
+import { diagnosticFromEvidence, makeDiagnostic } from "./diagnostics";
 import { normalizeUsername, validateUsername } from "./username";
 import { decideVerdict } from "./verdict";
 
-export type VerificationMode = "official" | "unofficial";
+/**
+ * official     — PUMP_API_KEY set; the official Developer API is used.
+ * unofficial   — no key, but the unofficial (Cloudflare-protected) sources were explicitly enabled.
+ * unconfigured — no key and no fallback: every check is UNKNOWN (OFFICIAL_API_KEY_MISSING).
+ */
+export type VerificationMode = "official" | "unofficial" | "unconfigured";
+
+export interface ProbeResult {
+  ok: boolean;
+  mode: VerificationMode;
+  diagnostic?: Diagnostic;
+  httpStatus?: number;
+  requestId?: string;
+  latencyMs: number;
+}
 
 export interface CheckerConfig {
   fetch?: FetchLike;
@@ -79,7 +94,24 @@ export class UsernameChecker {
   }
 
   get mode(): VerificationMode {
-    return this.official ? "official" : "unofficial";
+    return this.official ? "official" : this.fallback ? "unofficial" : "unconfigured";
+  }
+
+  /**
+   * Make one real request to the official API to confirm the key works.
+   * Any definite exists_flag answer means the key, scope and region are OK.
+   */
+  async probe(signal?: AbortSignal): Promise<ProbeResult> {
+    const started = this.now();
+    if (!this.official) {
+      return { ok: false, mode: this.mode, diagnostic: makeDiagnostic("OFFICIAL_API_KEY_MISSING"), latencyMs: 0 };
+    }
+    const e = await this.runProvider(this.official, "pump", signal);
+    const latencyMs = this.now() - started;
+    if (e.outcome === "found" || e.outcome === "not_found") {
+      return { ok: true, mode: this.mode, httpStatus: e.httpStatus, requestId: e.requestId, latencyMs };
+    }
+    return { ok: false, mode: this.mode, diagnostic: diagnosticFromEvidence(e), httpStatus: e.httpStatus, requestId: e.requestId, latencyMs };
   }
 
   profileUrl(username: string): string {
@@ -107,28 +139,49 @@ export class UsernameChecker {
       username,
       profileUrl: this.profileUrl(username),
     };
+    const unknown = (diagnostic: Diagnostic, reason: string, evidence: Evidence[] = []): CheckResult => ({
+      ...base,
+      status: "unknown",
+      confidence: "none",
+      reason,
+      checkedAt: new Date(this.now()).toISOString(),
+      method: "none",
+      diagnostic,
+      evidence,
+    });
+
     const validation = validateUsername(username);
     if (!validation.valid) {
-      return {
-        ...base,
-        status: "unknown",
-        confidence: "low",
-        reason: `Not checked: ${validation.error}`,
-        checkedAt: new Date(this.now()).toISOString(),
-        evidence: [],
-      };
+      return unknown(makeDiagnostic("INVALID_USERNAME"), `Not checked: ${validation.error}`);
+    }
+    if (!this.official && !this.fallback) {
+      const d = makeDiagnostic("OFFICIAL_API_KEY_MISSING");
+      return unknown(d, `Not checked: ${d.message}`);
     }
 
     const evidence: Evidence[] = [];
-    const finish = (v: ReturnType<typeof decideVerdict>): CheckResult => ({
-      ...base,
-      status: v.status,
-      confidence: v.confidence,
-      reason: v.reason,
-      wallet: v.wallet,
-      checkedAt: new Date(this.now()).toISOString(),
-      evidence,
-    });
+    const finish = (v: ReturnType<typeof decideVerdict>): CheckResult => {
+      const checkedAt = new Date(this.now()).toISOString();
+      if (v.status === "unknown") {
+        // Explain the failure using the most important inconclusive source:
+        // the official API first, then the unofficial ones in request order.
+        const failing = evidence.find((x) => x.outcome !== "found" && x.outcome !== "not_found" && x.outcome !== "skipped");
+        const d = failing ? diagnosticFromEvidence(failing) : makeDiagnostic("UNEXPECTED_RESPONSE");
+        return { ...unknown(d, v.reason, evidence), checkedAt };
+      }
+      const decidedByOfficial = !!official && (official.outcome === "found" || official.outcome === "not_found");
+      return {
+        ...base,
+        status: v.status,
+        confidence: v.confidence,
+        reason: v.reason,
+        wallet: v.wallet,
+        checkedAt,
+        verifiedAt: checkedAt,
+        method: decidedByOfficial ? "official-api" : "unofficial",
+        evidence,
+      };
+    };
 
     let official: Evidence | undefined;
     if (this.official) {
@@ -175,7 +228,7 @@ export class UsernameChecker {
     let last: Evidence | undefined;
     for (let attempt = 0; attempt <= this.retries; attempt++) {
       if (signal?.aborted) {
-        return { source: provider.name, outcome: "error", detail: "Check was cancelled." };
+        return { source: provider.name, outcome: "error", detail: "Check was cancelled.", code: "CANCELLED" };
       }
       const acquired = await throttle.acquire();
       if (!acquired) {
@@ -183,6 +236,7 @@ export class UsernameChecker {
           last ?? {
             source: provider.name,
             outcome: "rate_limited",
+            code: "RATE_LIMITED",
             detail: `Cooling down after rate limiting (${Math.ceil(throttle.cooldownRemaining() / 1000)}s left).`,
           }
         );
@@ -192,7 +246,7 @@ export class UsernameChecker {
         throttle.report429(last.retryAfterSec);
         continue;
       }
-      if (last.outcome === "error") {
+      if (last.outcome === "error" && last.code !== "CANCELLED") {
         await this.sleep(500 * (attempt + 1));
         continue;
       }
@@ -214,7 +268,8 @@ export function checkerFromEnv(env: Record<string, string | undefined> = process
     officialProvider: apiKey
       ? new OfficialApiProvider(apiKey, env.PUMP_OFFICIAL_API_BASE || DEFAULT_OFFICIAL_API_BASE)
       : null,
-    unofficialFallback: env.PUMP_UNOFFICIAL_FALLBACK !== "0",
+    // Unofficial sources (Cloudflare-protected) are OFF unless explicitly enabled.
+    unofficialFallback: env.PUMP_UNOFFICIAL_FALLBACK === "1",
     apiProvider: new FrontendApiProvider(env.PUMP_API_BASE || DEFAULT_API_BASE),
     pageProvider: env.PUMP_DISABLE_PAGE_CHECK === "1" ? null : new ProfilePageProvider(profileBase),
     profileBase,

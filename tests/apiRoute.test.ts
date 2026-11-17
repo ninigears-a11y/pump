@@ -1,62 +1,117 @@
 /**
- * Integration test: Next.js route handler -> checker engine -> mocked Pump.fun.
+ * Integration: Next.js route handlers -> checker engine -> mocked Pump.fun.
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { cloudflare, empty, html, json, user } from "./helpers";
+import { cloudflare, json } from "./helpers";
 
-let POST: (req: NextRequest) => Promise<Response>;
-let GET: (req: NextRequest) => Promise<Response>;
+type Handler = (req: NextRequest) => Promise<Response>;
 
-beforeAll(async () => {
-  process.env.PUMP_MIN_REQUEST_INTERVAL_MS = "0";
-  process.env.CHECK_RATE_LIMIT_PER_MINUTE = "1000";
-  delete process.env.HISTORY_DB_PATH;
-  ({ POST, GET } = await import("@/app/api/check/route"));
-});
-
-afterEach(() => vi.unstubAllGlobals());
-
-function stubUpstream(api: () => Response, page: () => Response = () => cloudflare()) {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (url: string) => (String(url).includes("frontend-api") ? api() : page())),
-  );
+async function loadRoutes(env: Record<string, string | undefined>) {
+  vi.resetModules();
+  for (const k of ["PUMP_API_KEY", "PUMP_UNOFFICIAL_FALLBACK", "HISTORY_DB_PATH"]) delete process.env[k];
+  Object.assign(process.env, { PUMP_MIN_REQUEST_INTERVAL_MS: "0", CHECK_RATE_LIMIT_PER_MINUTE: "1000", ...env });
+  const check = (await import("@/app/api/check/route")) as { POST: Handler; GET: Handler };
+  const health = (await import("@/app/api/health/route")) as { GET: Handler };
+  return { POST: check.POST, GET: check.GET, HEALTH: health.GET };
 }
 
-const post = (body: unknown) =>
+afterEach(() => {
+  vi.unstubAllGlobals();
+  delete process.env.PUMP_API_KEY;
+});
+
+function stubFetch(handler: (url: string, init?: RequestInit) => Response) {
+  const fn = vi.fn(async (url: string, init?: RequestInit) => handler(String(url), init));
+  vi.stubGlobal("fetch", fn);
+  return fn;
+}
+
+const post = (POST: Handler, body: unknown) =>
   POST(new NextRequest("http://localhost/api/check", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } }));
 
-describe("/api/check", () => {
-  it("returns taken for an existing profile", async () => {
-    stubUpstream(() => json(user("routetaken")));
-    const res = await post({ username: "routetaken" });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ username: "routetaken", status: "taken" });
+describe("/api/check with PUMP_API_KEY (official API)", () => {
+  it("TAKEN from exists_flag true, with verifiedAt and method", async () => {
+    const { POST } = await loadRoutes({ PUMP_API_KEY: "pf_live_test" });
+    const fetch = stubFetch(() => json({ exists_flag: true }));
+    const body = await (await post(POST, { username: "nom" })).json();
+    expect(body).toMatchObject({ status: "taken", confidence: "high", method: "official-api", profileUrl: "https://pump.fun/profile/nom" });
+    expect(body.verifiedAt).toBe(body.checkedAt);
+    expect(fetch.mock.calls[0]![0]).toBe("https://api.pump.fun/v1/users/username-exists/nom");
   });
 
-  it("returns available after clean double 404", async () => {
-    stubUpstream(() => empty(404), () => html("", 404));
-    const body = await (await post({ username: "routefree" })).json();
-    expect(body).toMatchObject({ status: "available", confidence: "high" });
+  it("AVAILABLE from exists_flag false", async () => {
+    const { GET } = await loadRoutes({ PUMP_API_KEY: "pf_live_test" });
+    stubFetch(() => json({ exists_flag: false }));
+    const body = await (await GET(new NextRequest("http://localhost/api/check?username=zzfresh"))).json();
+    expect(body).toMatchObject({ status: "available", method: "official-api" });
   });
 
-  it("returns unknown when Cloudflare blocks", async () => {
-    stubUpstream(() => cloudflare());
-    const body = await (await post({ username: "routeblocked" })).json();
+  it("UNKNOWN with API_KEY_INVALID diagnostic (no verifiedAt, no confidence)", async () => {
+    const { POST } = await loadRoutes({ PUMP_API_KEY: "pf_live_bad" });
+    stubFetch(() => json({ statusCode: 401, error: "API_KEY_INVALID" }, 401, { "x-request-id": "req-123" }));
+    const body = await (await post(POST, { username: "neo" })).json();
     expect(body.status).toBe("unknown");
+    expect(body.confidence).toBe("none");
+    expect(body.verifiedAt).toBeUndefined();
+    expect(body.diagnostic).toMatchObject({ code: "API_KEY_INVALID", blocking: true, httpStatus: 401, requestId: "req-123" });
   });
 
-  it("supports GET with query params", async () => {
-    stubUpstream(() => json(user("routeget")));
-    const res = await GET(new NextRequest("http://localhost/api/check?username=routeget"));
-    expect((await res.json()).status).toBe("taken");
+  it("UNKNOWN with CLOUDFLARE_BLOCKED on a 403 challenge", async () => {
+    const { POST } = await loadRoutes({ PUMP_API_KEY: "pf_live_test" });
+    stubFetch(() => cloudflare(403));
+    const body = await (await post(POST, { username: "zen" })).json();
+    expect(body.status).toBe("unknown");
+    expect(body.diagnostic.code).toBe("CLOUDFLARE_BLOCKED");
+  });
+
+  it("UNKNOWN with NETWORK_ERROR when Pump.fun is unreachable", async () => {
+    const { POST } = await loadRoutes({ PUMP_API_KEY: "pf_live_test" });
+    stubFetch(() => {
+      throw new TypeError("fetch failed");
+    });
+    const body = await (await post(POST, { username: "vex" })).json();
+    expect(body).toMatchObject({ status: "unknown", diagnostic: { code: "NETWORK_ERROR" } });
+  });
+});
+
+describe("/api/check without a key", () => {
+  it("UNKNOWN OFFICIAL_API_KEY_MISSING and makes NO outbound request", async () => {
+    const { POST } = await loadRoutes({});
+    const fetch = stubFetch(() => json({}));
+    const body = await (await post(POST, { username: "nom" })).json();
+    expect(body).toMatchObject({ status: "unknown", confidence: "none", method: "none", diagnostic: { code: "OFFICIAL_API_KEY_MISSING", blocking: true } });
+    expect(body.verifiedAt).toBeUndefined();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("validates input", async () => {
-    expect((await post({})).status).toBe(400);
-    expect((await post({ username: "x".repeat(500) })).status).toBe(400);
-    const bad = await POST(new NextRequest("http://localhost/api/check", { method: "POST", body: "not json" }));
-    expect(bad.status).toBe(400);
+    const { POST } = await loadRoutes({});
+    expect((await post(POST, {})).status).toBe(400);
+    expect((await post(POST, { username: "x".repeat(500) })).status).toBe(400);
+  });
+});
+
+describe("/api/health", () => {
+  it("reports unconfigured and never leaks the key", async () => {
+    const { HEALTH } = await loadRoutes({});
+    const body = await (await HEALTH(new NextRequest("http://localhost/api/health?probe=1"))).json();
+    expect(body).toMatchObject({ verification: "unconfigured", probe: { ok: false, diagnostic: { code: "OFFICIAL_API_KEY_MISSING" } } });
+  });
+
+  it("probe ok with a working key; key not in response", async () => {
+    const { HEALTH } = await loadRoutes({ PUMP_API_KEY: "pf_live_secret_value" });
+    stubFetch(() => json({ exists_flag: true }));
+    const res = await HEALTH(new NextRequest("http://localhost/api/health?probe=1"));
+    const text = await res.text();
+    expect(JSON.parse(text)).toMatchObject({ verification: "official", probe: { ok: true } });
+    expect(text).not.toContain("pf_live_secret_value");
+  });
+
+  it("probe surfaces the diagnostic for a rejected key", async () => {
+    const { HEALTH } = await loadRoutes({ PUMP_API_KEY: "pf_live_x" });
+    stubFetch(() => json({ error: "API_ORG_NOT_APPROVED" }, 403));
+    const body = await (await HEALTH(new NextRequest("http://localhost/api/health?probe=1"))).json();
+    expect(body.probe).toMatchObject({ ok: false, diagnostic: { code: "API_ORG_NOT_APPROVED" } });
   });
 });

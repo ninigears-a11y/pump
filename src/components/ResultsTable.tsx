@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react";
 import { ArrowDownAZ, ArrowUpAZ, Clock, Copy, Download, ExternalLink, History, Link2, RotateCw, Search, Star, Trash2 } from "lucide-react";
 import { store, useStore, type StoredResult } from "@/lib/client/store";
-import { checkUsername } from "@/lib/client/api";
-import { copyText, downloadFile, timeAgo } from "@/lib/client/util";
+import { copyText, downloadFile } from "@/lib/client/util";
+import { checkUsername, verifiedAtOf } from "@/lib/client/api";
+import { CheckedLabel } from "./Diagnostics";
 import { toCsv } from "@/lib/csv";
 import type { CheckStatus } from "@/lib/checker/types";
 import { Button, Card, CardHeader, IconButton, Segmented, StatusBadge, cx, useToast } from "./ui";
@@ -65,8 +66,19 @@ export function ResultsTable() {
     downloadFile(
       `pump-username-history-${new Date().toISOString().slice(0, 10)}.csv`,
       toCsv(
-        ["username", "status", "confidence", "profile_url", "last_checked", "favorite", "reason"],
-        rows.map((r) => [r.username, r.status, r.confidence, r.profileUrl, r.checkedAt, r.favorite ? "yes" : "", r.reason]),
+        ["username", "status", "verified_at", "attempted_at", "method", "confidence", "profile_url", "diagnostic_code", "favorite", "details"],
+        rows.map((r) => [
+          r.username,
+          r.status,
+          verifiedAtOf(r) ?? "",
+          r.checkedAt,
+          r.method ?? "",
+          r.confidence === "none" ? "" : r.confidence,
+          r.profileUrl,
+          r.diagnostic?.code ?? "",
+          r.favorite ? "yes" : "",
+          r.diagnostic?.message ?? r.reason,
+        ]),
       ),
     );
   }
@@ -154,7 +166,7 @@ export function ResultsTable() {
                   <th className="px-6 py-3 font-medium">Username</th>
                   <th className="px-3 py-3 font-medium">Status</th>
                   <th className="px-3 py-3 font-medium">Profile URL</th>
-                  <th className="px-3 py-3 font-medium">Last Checked</th>
+                  <th className="px-3 py-3 font-medium">Last Verified</th>
                   <th className="px-6 py-3 text-right font-medium">Action</th>
                 </tr>
               </thead>
@@ -173,8 +185,13 @@ export function ResultsTable() {
                   <span className="truncate font-mono text-[14px] font-medium">{r.username}</span>
                   <StatusBadge status={checking[r.username] ? "checking" : r.status} />
                 </div>
+                {r.status === "unknown" && r.diagnostic && !checking[r.username] && (
+                  <p className="mt-1 text-[12px] leading-4 text-unknown">
+                    {r.diagnostic.label}: {r.diagnostic.message}
+                  </p>
+                )}
                 <div className="mt-1 flex items-center justify-between gap-2">
-                  <span className="text-[12px] text-subtle">{timeAgo(r.checkedAt)}</span>
+                  <CheckedLabel r={r} className="text-[12px] text-subtle" />
                   <Actions r={r} checking={!!checking[r.username]} onRecheck={recheck} />
                 </div>
               </li>
@@ -203,8 +220,11 @@ function Row({ r, checking, onRecheck }: { r: StoredResult; checking: boolean; o
         </div>
       </td>
       <td className="px-3 py-3">
-        <span title={`${r.confidence} confidence — ${r.reason}`}>
+        <span title={r.diagnostic ? `${r.diagnostic.code}: ${r.diagnostic.message}` : r.reason} className="flex flex-col items-start gap-0.5">
           <StatusBadge status={checking ? "checking" : r.status} />
+          {r.status === "unknown" && r.diagnostic && !checking && (
+            <span className="text-[11px] font-medium text-unknown">{r.diagnostic.label}</span>
+          )}
         </span>
       </td>
       <td className="max-w-[16rem] px-3 py-3">
@@ -217,8 +237,8 @@ function Row({ r, checking, onRecheck }: { r: StoredResult; checking: boolean; o
           {r.profileUrl.replace(/^https:\/\//, "")}
         </a>
       </td>
-      <td className="whitespace-nowrap px-3 py-3 text-[13px] text-muted" title={new Date(r.checkedAt).toLocaleString()}>
-        {timeAgo(r.checkedAt)}
+      <td className="whitespace-nowrap px-3 py-3 text-[13px] text-muted">
+        <CheckedLabel r={r} />
       </td>
       <td className="px-6 py-3">
         <div className="flex justify-end">

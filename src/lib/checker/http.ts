@@ -2,6 +2,7 @@ import type { FetchLike } from "./types";
 
 export interface FetchOutcome {
   ok: boolean;
+  cancelled?: boolean;
   response?: Response;
   body?: string;
   error?: string;
@@ -33,10 +34,12 @@ export async function safeFetch(
     return { ok: true, response, body, durationMs: Date.now() - started };
   } catch (err) {
     const timedOut = controller.signal.aborted && !init.signal?.aborted;
+    const cancelled = !!init.signal?.aborted;
     return {
       ok: false,
-      error: timedOut ? "Request timed out." : describeNetworkError(err),
+      error: timedOut ? "Request timed out." : cancelled ? "Check was cancelled." : describeNetworkError(err),
       timedOut,
+      cancelled,
       durationMs: Date.now() - started,
     };
   } finally {
@@ -91,4 +94,9 @@ function describeNetworkError(err: unknown): string {
   const cause = (err as Error & { cause?: { code?: string; message?: string } }).cause;
   const code = cause?.code ?? cause?.message;
   return `Network error: ${err.message}${code ? ` (${code})` : ""}.`;
+}
+
+/** Diagnostic code for a request that never produced an HTTP response. */
+export function failureCode(o: FetchOutcome): "TIMEOUT" | "CANCELLED" | "NETWORK_ERROR" {
+  return o.timedOut ? "TIMEOUT" : o.cancelled ? "CANCELLED" : "NETWORK_ERROR";
 }
