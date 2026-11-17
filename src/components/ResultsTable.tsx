@@ -80,7 +80,7 @@ export function ResultsTable() {
         title="Results History"
         subtitle="Saved in this browser. Favorites are kept when you clear."
         right={
-          <div className="flex gap-2">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
             <Button size="sm" onClick={exportAll}>
               <Download className="h-3.5 w-3.5" /> Export CSV
             </Button>
@@ -110,9 +110,10 @@ export function ResultsTable() {
             className="h-full flex-1 bg-transparent text-sm outline-none placeholder:text-subtle"
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="max-w-full overflow-x-auto">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="w-full sm:w-auto">
             <Segmented<Filter>
+              fill
               value={filter}
               onChange={(f) => {
                 setFilter(f);
@@ -247,7 +248,7 @@ function Actions({ r, checking, onRecheck }: { r: StoredResult; checking: boolea
         rel="noopener noreferrer"
         aria-label="Open Pump.fun profile"
         title="Open Pump.fun profile"
-        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface hover:text-ink"
+        className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-muted sm:h-8 sm:w-8 hover:bg-surface hover:text-ink"
       >
         <ExternalLink className="h-4 w-4" />
       </a>

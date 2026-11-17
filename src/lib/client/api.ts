@@ -1,6 +1,6 @@
 import type { CheckResult } from "@/lib/checker/types";
 
-export const PROFILE_BASE = "https://pump.fun/u";
+export const PROFILE_BASE = "https://pump.fun/profile";
 export const profileUrlFor = (u: string) => `${PROFILE_BASE}/${encodeURIComponent(u)}`;
 
 function unknownResult(username: string, reason: string, cooldownMs?: number): CheckResult & { cooldownMs?: number } {

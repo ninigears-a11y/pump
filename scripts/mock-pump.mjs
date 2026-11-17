@@ -3,7 +3,10 @@
  * Local mock of Pump.fun for development and demos (no real traffic).
  *
  *   node scripts/mock-pump.mjs            # listens on :4010
- *   PUMP_API_BASE=http://localhost:4010 PUMP_PROFILE_BASE=http://localhost:4010/u npm run dev
+ *   PUMP_API_BASE=http://localhost:4010 PUMP_PROFILE_BASE=http://localhost:4010/profile npm run dev
+ *
+ * Official API emulation (any non-empty Bearer key is accepted):
+ *   PUMP_API_KEY=pf_live_mock PUMP_OFFICIAL_API_BASE=http://localhost:4010/v1 ...
  *
  * Behaviour:
  *   - names in TAKEN            -> 200 user JSON
@@ -20,7 +23,19 @@ const TAKEN = new Set(
 
 createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
-  const m = url.pathname.match(/^\/(users|u)\/([^/]+)$/);
+  const official = url.pathname.match(/^\/v1\/users\/username-exists\/([^/]+)$/);
+  if (official) {
+    const auth = req.headers.authorization || "";
+    res.setHeader("content-type", "application/json");
+    if (!/^Bearer \S+$/.test(auth)) {
+      res.writeHead(401);
+      return res.end(JSON.stringify({ statusCode: 401, error: "API_KEY_REQUIRED", message: "Send Authorization: Bearer <key>" }));
+    }
+    const name = decodeURIComponent(official[1]).toLowerCase();
+    res.writeHead(200);
+    return res.end(JSON.stringify({ exists_flag: TAKEN.has(name) }));
+  }
+  const m = url.pathname.match(/^\/(users|profile)\/([^/]+)$/);
   if (!m) {
     res.writeHead(404, { "content-type": "application/json" });
     return res.end(JSON.stringify({ message: `Cannot GET ${url.pathname}`, statusCode: 404 }));

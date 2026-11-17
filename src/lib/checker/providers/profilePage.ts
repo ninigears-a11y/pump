@@ -1,10 +1,10 @@
 import type { Evidence, EvidenceProvider, ProviderContext } from "../types";
 import { isChallengeResponse, parseRetryAfter, safeFetch } from "../http";
 
-export const DEFAULT_PROFILE_BASE = "https://pump.fun/u";
+export const DEFAULT_PROFILE_BASE = "https://pump.fun/profile";
 
 /**
- * Corroborating evidence from the public profile page `https://pump.fun/u/{username}`.
+ * Corroborating evidence from the public profile page `https://pump.fun/profile/{username}`.
  *
  * The page is a client-rendered Next.js app, so this provider is deliberately
  * conservative: it only reports `found` when the HTML embeds the username in a

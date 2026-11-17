@@ -6,8 +6,9 @@ describe("normalizeUsername", () => {
     ["mrnom", "mrnom"],
     ["  MrNom ", "mrnom"],
     ["@mrnom", "mrnom"],
-    ["https://pump.fun/u/MrDev", "mrdev"],
-    ["pump.fun/u/mrsol?tab=coins", "mrsol"],
+    ["https://pump.fun/profile/MrDev", "mrdev"],
+    ["pump.fun/profile/mrsol?tab=coins", "mrsol"],
+    ["https://pump.fun/u/legacy", "legacy"],
     ["https://pump.fun/profile/mrkind", "mrkind"],
   ])("%s -> %s", (input, out) => expect(normalizeUsername(input)).toBe(out));
 });

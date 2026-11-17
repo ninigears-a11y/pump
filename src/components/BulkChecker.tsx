@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Copy, Download, Layers, Pause, Play, Square, Settings2 } from "lucide-react";
 import { parseUsernameList, validateUsername } from "@/lib/checker/username";
 import { useBulk } from "@/lib/client/bulk";
+import { profileUrlFor } from "@/lib/client/api";
 import { store, useStore } from "@/lib/client/store";
 import { copyText, downloadFile, timeAgo } from "@/lib/client/util";
 import { toCsv } from "@/lib/csv";
@@ -89,7 +90,7 @@ export function BulkChecker() {
               placeholder={EXAMPLE}
               spellCheck={false}
               aria-label="Usernames to check, one per line"
-              className="h-64 w-full resize-y rounded-xl border border-line-strong bg-white p-4 font-mono text-[13px] leading-6 outline-none transition-shadow placeholder:text-line-strong focus:border-ink/40 focus:ring-4 focus:ring-ink/5"
+              className="h-48 w-full resize-y rounded-xl sm:h-64 border border-line-strong bg-white p-4 font-mono text-[13px] leading-6 outline-none transition-shadow placeholder:text-line-strong focus:border-ink/40 focus:ring-4 focus:ring-ink/5"
             />
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted">
               <span>
@@ -145,7 +146,7 @@ export function BulkChecker() {
               </div>
             )}
 
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
               {running ? (
                 <Button variant="secondary" onClick={bulk.pause}>
                   <Pause className="h-4 w-4" /> Pause
@@ -186,8 +187,9 @@ export function BulkChecker() {
               </div>
             </div>
 
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <Segmented<Filter>
+                fill
                 value={filter}
                 onChange={setFilter}
                 options={[
@@ -197,7 +199,7 @@ export function BulkChecker() {
                   { value: "unknown", label: "Unknown", count: counts.unknown },
                 ]}
               />
-              <div className="flex gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:flex">
                 <Button
                   size="sm"
                   onClick={() =>
@@ -214,7 +216,7 @@ export function BulkChecker() {
               </div>
             </div>
 
-            <div className="h-72 overflow-y-auto rounded-xl border border-line lg:h-[22rem]">
+            <div className="max-h-[60vh] min-h-48 overflow-y-auto overscroll-contain rounded-xl border border-line sm:h-72 lg:h-[22rem]">
               {visible.length === 0 ? (
                 <div className="flex h-full items-center justify-center p-6 text-center text-[13px] text-subtle">
                   {rows.length ? "No results in this filter." : "Live results appear here as names are checked."}
@@ -222,12 +224,12 @@ export function BulkChecker() {
               ) : (
                 <ul className="divide-y divide-line">
                   {visible.slice(0, 1000).map((r) => (
-                    <li key={r.username} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                    <li key={r.username} className="flex min-h-12 items-center justify-between gap-3 px-4">
                       <a
-                        href={r.result?.profileUrl ?? `https://pump.fun/u/${r.username}`}
+                        href={r.result?.profileUrl ?? profileUrlFor(r.username)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="truncate font-mono text-[13px] hover:underline"
+                        className="min-w-0 flex-1 truncate py-3 font-mono text-[14px] hover:underline sm:py-2.5 sm:text-[13px]"
                       >
                         {r.username}
                       </a>

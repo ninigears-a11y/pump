@@ -81,13 +81,13 @@ export function Generator() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <div>
             <span className="mb-1.5 block text-[13px] font-medium">How many</span>
-            <div className="inline-flex rounded-xl border border-line bg-surface p-1">
+            <div className="grid grid-cols-5 rounded-xl border border-line bg-surface p-1 sm:inline-flex">
               {COUNTS.map((n) => (
                 <button
                   key={n}
                   onClick={() => setCount(n)}
                   className={cx(
-                    "rounded-lg px-3 py-1.5 text-[13px] font-medium tabular-nums transition-all",
+                    "min-h-10 rounded-lg px-1 py-1.5 text-[13px] font-medium tabular-nums transition-all sm:min-h-0 sm:px-3",
                     count === n ? "bg-white shadow-sm ring-1 ring-line" : "text-muted hover:text-ink",
                   )}
                 >
@@ -111,7 +111,7 @@ export function Generator() {
             <Wand2 className="h-4 w-4" /> Generate
           </Button>
         </div>
-        <label className="flex items-center gap-2 text-[13px] text-muted">
+        <label className="flex min-h-10 items-center gap-2 text-[13px] text-muted">
           <input type="checkbox" checked={skipChecked} onChange={(e) => setSkipChecked(e.target.checked)} className="h-4 w-4 accent-black" />
           Skip usernames already checked
         </label>
@@ -123,7 +123,7 @@ export function Generator() {
                 {ideas.length.toLocaleString()} ideas
                 {ideas.length > preview.length && <span className="font-normal text-subtle"> · showing {preview.length}</span>}
               </span>
-              <div className="flex gap-2">
+              <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto">
                 <Button size="sm" onClick={() => copyText(ideas.join("\n")).then(() => toast(`Copied ${ideas.length} ideas`))}>
                   <Copy className="h-3.5 w-3.5" /> Copy
                 </Button>

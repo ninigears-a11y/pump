@@ -23,6 +23,9 @@
 }
 
 html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -33,6 +36,13 @@ body {
   font-family: var(--font-sans);
   font-feature-settings: "cv11", "ss01";
 }
+
+/* iOS Safari zooms into inputs below 16px; keep form text >= 16px on phones. */
+@media (max-width: 639px) {
+  input, textarea, select { font-size: 16px !important; }
+}
+
+button, a, input, textarea, label { touch-action: manipulation; }
 
 ::selection {
   background: #0a0a0a;

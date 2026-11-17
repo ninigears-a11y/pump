@@ -28,8 +28,9 @@ export function Button({
         "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl font-medium transition-all",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20 focus-visible:ring-offset-2",
         "disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98]",
-        size === "sm" && "h-8 px-3 text-[13px]",
-        size === "md" && "h-10 px-4 text-sm",
+        // Phones get 40–44px tap targets; desktop keeps the compact sizes.
+        size === "sm" && "h-10 px-3.5 text-[14px] sm:h-8 sm:px-3 sm:text-[13px]",
+        size === "md" && "h-12 px-4 text-[15px] sm:h-10 sm:text-sm",
         size === "lg" && "h-14 px-6 text-base",
         variant === "primary" && "bg-ink text-white shadow-sm hover:bg-black/85",
         variant === "secondary" && "border border-line-strong bg-white text-ink hover:border-ink/30 hover:bg-surface",
@@ -56,7 +57,7 @@ export function IconButton({
       aria-label={label}
       title={label}
       className={cx(
-        "inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors",
+        "inline-flex h-10 w-10 items-center justify-center rounded-lg text-muted transition-colors sm:h-8 sm:w-8",
         "hover:bg-surface hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20",
         "disabled:cursor-not-allowed disabled:opacity-40",
         className,
@@ -125,14 +126,24 @@ export function Segmented<T extends string>({
   onChange,
   options,
   className,
+  fill,
 }: {
   value: T;
   onChange: (v: T) => void;
   options: { value: T; label: ReactNode; count?: number }[];
   className?: string;
+  /** Stretch to full width on phones (equal columns, count under the label). */
+  fill?: boolean;
 }) {
   return (
-    <div role="tablist" className={cx("inline-flex rounded-xl border border-line bg-surface p-1", className)}>
+    <div
+      role="tablist"
+      className={cx(
+        "rounded-xl border border-line bg-surface p-1",
+        fill ? "flex w-full sm:inline-flex sm:w-auto" : "inline-flex",
+        className,
+      )}
+    >
       {options.map((o) => (
         <button
           key={o.value}
@@ -140,7 +151,8 @@ export function Segmented<T extends string>({
           aria-selected={value === o.value}
           onClick={() => onChange(o.value)}
           className={cx(
-            "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-all",
+            "inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-all sm:min-h-0",
+            fill && "min-w-0 flex-1 flex-col gap-0.5 px-1 sm:flex-none sm:flex-row sm:gap-1.5 sm:px-3",
             value === o.value ? "bg-white text-ink shadow-sm ring-1 ring-line" : "text-muted hover:text-ink",
           )}
         >
@@ -183,7 +195,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastCtx.Provider value={push}>
       {children}
-      <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex flex-col items-center gap-2 px-4">
+      <div
+        aria-live="polite"
+        className="pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4"
+        style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 1.5rem)" }}
+      >
         {toasts.map((t) => (
           <div key={t.id} className="animate-toast rounded-xl bg-ink px-4 py-2.5 text-[13px] font-medium text-white shadow-lg">
             {t.msg}

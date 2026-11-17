@@ -2,7 +2,7 @@
   "name": "pump-username-checker",
   "version": "1.0.0",
   "private": true,
-  "description": "Check Pump.fun username availability — single, bulk, generator and smart suggestions.",
+  "description": "Check Pump.fun username availability \u2014 single, bulk, generator and smart suggestions.",
   "license": "MIT",
   "engines": {
     "node": ">=20.18"
@@ -17,7 +17,7 @@
     "test:watch": "vitest",
     "test:live": "LIVE=1 vitest run tests/live",
     "mock": "node scripts/mock-pump.mjs",
-    "dev:mock": "PUMP_API_BASE=http://localhost:4010 PUMP_PROFILE_BASE=http://localhost:4010/u next dev"
+    "dev:mock": "PUMP_API_BASE=http://localhost:4010 PUMP_PROFILE_BASE=http://localhost:4010/profile next dev"
   },
   "dependencies": {
     "lucide-react": "1.74.0",

@@ -8,8 +8,10 @@ export interface Verdict {
 }
 
 export interface VerdictInput {
-  /** Primary API evidence (first request). */
-  api: Evidence;
+  /** Official Developer API evidence (authoritative), when a key is configured. */
+  official?: Evidence;
+  /** Unofficial frontend API evidence (first request). */
+  api?: Evidence;
   /** Optional second API request used to confirm a not_found. */
   apiConfirm?: Evidence;
   /** Optional public profile page evidence. */
@@ -22,6 +24,7 @@ export interface VerdictInput {
  * Combine evidence into a verdict.
  *
  * Rules (in order):
+ *  0. Official API `exists_flag` false -> AVAILABLE (high); true -> TAKEN (high).
  *  1. Any source positively identifying the profile  -> TAKEN.
  *  2. AVAILABLE requires the API to return a clean not_found on BOTH the
  *     primary and the confirmation request, and the profile page must not
@@ -30,15 +33,31 @@ export interface VerdictInput {
  *
  * A page `not_found` alone is never enough for AVAILABLE.
  */
-export function decideVerdict({ api, apiConfirm, page, strict }: VerdictInput): Verdict {
-  const all = [api, apiConfirm, page].filter((x): x is Evidence => !!x);
+export function decideVerdict({ official, api, apiConfirm, page, strict }: VerdictInput): Verdict {
+  const all = [official, api, apiConfirm, page].filter((x): x is Evidence => !!x);
+
+  if (official?.outcome === "found") {
+    return { status: "taken", confidence: "high", reason: official.detail };
+  }
+  if (official?.outcome === "not_found" && !all.some((x) => x.outcome === "found")) {
+    return { status: "available", confidence: "high", reason: official.detail };
+  }
+  const officialNote = official ? ` (Official API inconclusive: ${official.detail})` : "";
+
+  if (!api) {
+    return {
+      status: "unknown",
+      confidence: "low",
+      reason: official ? `Official API inconclusive: ${official.detail}` : "No verification source was available.",
+    };
+  }
 
   const found = all.find((x) => x.outcome === "found");
   if (found) {
     const conflicting = all.some((x) => x.outcome === "not_found");
     return {
       status: "taken",
-      confidence: found.source === api.source && !conflicting ? "high" : "medium",
+      confidence: (found.source === api.source || found === official) && !conflicting ? "high" : "medium",
       reason: conflicting
         ? `${found.detail} (Sources disagree; treated as taken to stay safe.)`
         : found.detail,
@@ -53,20 +72,20 @@ export function decideVerdict({ api, apiConfirm, page, strict }: VerdictInput): 
       return {
         status: "available",
         confidence: "high",
-        reason: "No profile found: the API confirmed twice and the profile page returned not found.",
+        reason: "No profile found: the public frontend API confirmed twice and the profile page returned not found.",
       };
     }
     if (strict) {
       return {
         status: "unknown",
         confidence: "low",
-        reason: `API reports no user, but strict mode needs the profile page to confirm (${page ? page.detail : "page check skipped"}).`,
+        reason: `Unofficial API reports no user, but strict mode needs the profile page to confirm (${page ? page.detail : "page check skipped"}).${officialNote}`,
       };
     }
     return {
       status: "available",
       confidence: "medium",
-      reason: `No profile found: the Pump.fun API returned "no user" on two consecutive checks.${
+      reason: `No profile found: Pump.fun's public frontend API returned "no user" on two consecutive checks.${
         page ? ` Profile page was inconclusive (${page.outcome}).` : ""
       }`,
     };
@@ -76,7 +95,7 @@ export function decideVerdict({ api, apiConfirm, page, strict }: VerdictInput): 
     return {
       status: "unknown",
       confidence: "low",
-      reason: `Confirmation request failed: ${apiConfirm.detail}`,
+      reason: `Confirmation request failed: ${apiConfirm.detail}${officialNote}`,
     };
   }
 
@@ -84,5 +103,5 @@ export function decideVerdict({ api, apiConfirm, page, strict }: VerdictInput): 
     return { status: "unknown", confidence: "low", reason: "Availability not confirmed by a second request." };
   }
 
-  return { status: "unknown", confidence: "low", reason: api.detail };
+  return { status: "unknown", confidence: "low", reason: `${api.detail}${officialNote}` };
 }

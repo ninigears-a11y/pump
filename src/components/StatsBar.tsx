@@ -30,7 +30,7 @@ export function StatsBar() {
             <span className={cx("h-1.5 w-1.5 rounded-full", i.dot)} />
             {i.label}
           </div>
-          <div className="mt-1.5 text-2xl font-semibold tracking-tight tabular-nums sm:text-[28px]">
+          <div className="mt-1 text-2xl font-semibold tracking-tight tabular-nums sm:mt-1.5 sm:text-[28px]">
             {i.value.toLocaleString()}
           </div>
         </div>

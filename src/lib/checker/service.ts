@@ -1,13 +1,23 @@
 import { ResultCache } from "./cache";
 import { FrontendApiProvider, DEFAULT_API_BASE } from "./providers/frontendApi";
 import { ProfilePageProvider, DEFAULT_PROFILE_BASE } from "./providers/profilePage";
+import { OfficialApiProvider, DEFAULT_OFFICIAL_API_BASE } from "./providers/officialApi";
 import { OutboundThrottle } from "./rateLimiter";
 import type { CheckOptions, CheckResult, Evidence, EvidenceProvider, FetchLike } from "./types";
 import { normalizeUsername, validateUsername } from "./username";
 import { decideVerdict } from "./verdict";
 
+export type VerificationMode = "official" | "unofficial";
+
 export interface CheckerConfig {
   fetch?: FetchLike;
+  /**
+   * Authoritative provider (Pump.fun official Developer API). When it gives a
+   * definite answer, no other source is consulted.
+   */
+  officialProvider?: EvidenceProvider | null;
+  /** Use unofficial sources when the official provider is missing or inconclusive. */
+  unofficialFallback?: boolean;
   /** Primary provider; must be able to return found / not_found. */
   apiProvider?: EvidenceProvider;
   /** Corroborating provider (set to null to disable). */
@@ -35,6 +45,8 @@ const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
  */
 export class UsernameChecker {
   private readonly fetchImpl: FetchLike;
+  private readonly official: EvidenceProvider | null;
+  private readonly fallback: boolean;
   private readonly api: EvidenceProvider;
   private readonly page: EvidenceProvider | null;
   private readonly profileBase: string;
@@ -51,6 +63,8 @@ export class UsernameChecker {
 
   constructor(cfg: CheckerConfig = {}) {
     this.fetchImpl = cfg.fetch ?? ((input, init) => fetch(input, init));
+    this.official = cfg.officialProvider ?? null;
+    this.fallback = cfg.unofficialFallback ?? true;
     this.api = cfg.apiProvider ?? new FrontendApiProvider();
     this.page = cfg.pageProvider === undefined ? new ProfilePageProvider() : cfg.pageProvider;
     this.profileBase = (cfg.profileBase ?? DEFAULT_PROFILE_BASE).replace(/\/+$/, "");
@@ -62,6 +76,10 @@ export class UsernameChecker {
     this.minIntervalMs = cfg.minIntervalMs ?? 400;
     this.maxQueueWaitMs = cfg.maxQueueWaitMs ?? 8_000;
     this.now = cfg.now ?? Date.now;
+  }
+
+  get mode(): VerificationMode {
+    return this.official ? "official" : "unofficial";
   }
 
   profileUrl(username: string): string {
@@ -102,6 +120,26 @@ export class UsernameChecker {
     }
 
     const evidence: Evidence[] = [];
+    const finish = (v: ReturnType<typeof decideVerdict>): CheckResult => ({
+      ...base,
+      status: v.status,
+      confidence: v.confidence,
+      reason: v.reason,
+      wallet: v.wallet,
+      checkedAt: new Date(this.now()).toISOString(),
+      evidence,
+    });
+
+    let official: Evidence | undefined;
+    if (this.official) {
+      official = await this.runProvider(this.official, username, options.signal);
+      evidence.push(official);
+      const decisive = official.outcome === "found" || official.outcome === "not_found";
+      if (decisive || !this.fallback) {
+        return finish(decideVerdict({ official, strict: !!options.strict }));
+      }
+    }
+
     const api = await this.runProvider(this.api, username, options.signal);
     evidence.push(api);
 
@@ -120,16 +158,7 @@ export class UsernameChecker {
       }
     }
 
-    const verdict = decideVerdict({ api, apiConfirm, page, strict: !!options.strict });
-    return {
-      ...base,
-      status: verdict.status,
-      confidence: verdict.confidence,
-      reason: verdict.reason,
-      wallet: verdict.wallet,
-      checkedAt: new Date(this.now()).toISOString(),
-      evidence,
-    };
+    return finish(decideVerdict({ official, api, apiConfirm, page, strict: !!options.strict }));
   }
 
   private throttleFor(name: string): OutboundThrottle {
@@ -180,7 +209,12 @@ export function checkerFromEnv(env: Record<string, string | undefined> = process
     return Number.isFinite(n) && n >= 0 ? n : d;
   };
   const profileBase = env.PUMP_PROFILE_BASE || DEFAULT_PROFILE_BASE;
+  const apiKey = env.PUMP_API_KEY?.trim();
   return new UsernameChecker({
+    officialProvider: apiKey
+      ? new OfficialApiProvider(apiKey, env.PUMP_OFFICIAL_API_BASE || DEFAULT_OFFICIAL_API_BASE)
+      : null,
+    unofficialFallback: env.PUMP_UNOFFICIAL_FALLBACK !== "0",
     apiProvider: new FrontendApiProvider(env.PUMP_API_BASE || DEFAULT_API_BASE),
     pageProvider: env.PUMP_DISABLE_PAGE_CHECK === "1" ? null : new ProfilePageProvider(profileBase),
     profileBase,

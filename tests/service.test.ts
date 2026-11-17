@@ -10,7 +10,7 @@ describe("UsernameChecker (mocked upstream)", () => {
   it("TAKEN when the API returns the profile; skips extra requests", async () => {
     const fetch = mockFetch({ api: () => json(user("mrnom")) });
     const r = await make(fetch).check("MrNom");
-    expect(r).toMatchObject({ username: "mrnom", status: "taken", profileUrl: "https://pump.fun/u/mrnom" });
+    expect(r).toMatchObject({ username: "mrnom", status: "taken", profileUrl: "https://pump.fun/profile/mrnom" });
     expect(r.wallet).toBeDefined();
     expect(fetch).toHaveBeenCalledTimes(1);
   });
@@ -137,7 +137,7 @@ describe("UsernameChecker (mocked upstream)", () => {
     await make(fetch).check("mr_dev");
     const urls = fetch.mock.calls.map((c) => c[0]);
     expect(urls).toContain("https://frontend-api-v3.pump.fun/users/mr_dev");
-    expect(urls).toContain("https://pump.fun/u/mr_dev");
+    expect(urls).toContain("https://pump.fun/profile/mr_dev");
     expect(fetch.mock.calls[0]?.[1]).toMatchObject({ redirect: "manual" });
   });
 

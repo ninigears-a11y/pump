@@ -18,13 +18,17 @@ export const CLOUDFLARE_HTML =
 export const cloudflare = (status = 403) => html(CLOUDFLARE_HTML, status, { "cf-mitigated": "challenge" });
 
 /** Build a fetch mock that dispatches on host: api vs profile page. */
-export function mockFetch(handlers: { api?: Route; page?: Route }) {
+export function mockFetch(handlers: { api?: Route; page?: Route; official?: Route }) {
   const fn = vi.fn<FetchLike>(async (url, init) => {
+    if (url.includes("api.pump.fun/v1/")) {
+      if (!handlers.official) throw new Error("unexpected official api call");
+      return handlers.official(url, init);
+    }
     if (url.includes("frontend-api")) {
       if (!handlers.api) throw new Error("unexpected api call");
       return handlers.api(url, init);
     }
-    if (url.includes("pump.fun/u/")) {
+    if (url.includes("pump.fun/profile/")) {
       if (!handlers.page) throw new Error("unexpected page call");
       return handlers.page(url, init);
     }

@@ -63,7 +63,7 @@ export function SingleChecker() {
               error ? "border-taken-line" : "border-line-strong",
             )}
           >
-            <span className="hidden select-none text-[15px] text-subtle sm:inline">pump.fun/u/</span>
+            <span className="hidden select-none text-[15px] text-subtle sm:inline">pump.fun/profile/</span>
             <AtSign className="h-4 w-4 text-subtle sm:hidden" aria-hidden />
             <input
               value={value}
@@ -124,7 +124,7 @@ export function SingleChecker() {
                   rel="noopener noreferrer"
                   aria-label="Open Pump.fun profile"
                   title="Open Pump.fun profile"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-white hover:text-ink"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-muted sm:h-8 sm:w-8 hover:bg-white hover:text-ink"
                 >
                   <ExternalLink className="h-4 w-4" />
                 </a>

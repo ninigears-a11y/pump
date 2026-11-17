@@ -13,7 +13,8 @@ const USERNAME_RE = /^[a-z0-9_]+$/;
 
 /**
  * Turn raw user input into a canonical username.
- * Accepts `mrnom`, `@mrnom`, ` MrNom `, `pump.fun/u/mrnom`, `https://pump.fun/u/mrnom?x=1`.
+ * Accepts `mrnom`, `@mrnom`, ` MrNom `, `pump.fun/profile/mrnom`, `https://pump.fun/profile/mrnom?x=1`
+ * (legacy `pump.fun/u/...` links are accepted too).
  */
 export function normalizeUsername(raw: string): string {
   let s = (raw ?? "").trim();
