@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
-import { CheckCircle2, CircleHelp, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, CircleHelp, Hand, Loader2, XCircle } from "lucide-react";
 import type { CheckStatus } from "@/lib/checker/types";
 
 export function cx(...c: (string | false | null | undefined)[]) {
@@ -105,18 +105,37 @@ const STATUS_META: Record<CheckStatus | "checking", { label: string; cls: string
   checking: { label: "Checking", cls: "bg-surface text-muted border-line", Icon: Loader2 },
 };
 
-export function StatusBadge({ status, size = "sm" }: { status: CheckStatus | "checking"; size?: "sm" | "lg" }) {
+/**
+ * Status pill. Manual results (the user looked at the profile and marked it) use
+ * different wording ("Exists" / "Not found"), a hand icon and a dashed border so
+ * they are never mistaken for automatic verification.
+ */
+export function StatusBadge({
+  status,
+  size = "sm",
+  manual,
+}: {
+  status: CheckStatus | "checking";
+  size?: "sm" | "lg";
+  manual?: boolean;
+}) {
   const m = STATUS_META[status];
+  const isManual = manual && (status === "taken" || status === "available");
+  const label = isManual ? (status === "taken" ? "Exists" : "Not found") : m.label;
+  const Icon = isManual ? Hand : m.Icon;
   return (
     <span
+      title={isManual ? "Checked by you on pump.fun (not automatically verified)" : undefined}
       className={cx(
-        "inline-flex items-center gap-1.5 rounded-full border font-semibold uppercase tracking-wide",
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border font-semibold uppercase tracking-wide",
         size === "sm" ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-xs",
+        isManual && "border-dashed",
         m.cls,
       )}
     >
-      <m.Icon className={cx(size === "sm" ? "h-3 w-3" : "h-3.5 w-3.5", status === "checking" && "animate-spin")} aria-hidden />
-      {m.label}
+      <Icon className={cx(size === "sm" ? "h-3 w-3" : "h-3.5 w-3.5", status === "checking" && "animate-spin")} aria-hidden />
+      {label}
+      {isManual && <span className="font-medium normal-case tracking-normal opacity-75">· you</span>}
     </span>
   );
 }

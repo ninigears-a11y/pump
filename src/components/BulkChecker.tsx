@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Copy, Download, Layers, Pause, Play, Square, Settings2 } from "lucide-react";
+import { Copy, Download, ExternalLink, Layers, ListChecks, Pause, Play, Square, Settings2, Trash2 } from "lucide-react";
+import { useCheckMode } from "@/lib/client/mode";
+import { ReviewDeck } from "./Assisted";
 import { parseUsernameList, validateUsername } from "@/lib/checker/username";
 import { useBulk } from "@/lib/client/bulk";
 import { profileUrlFor } from "@/lib/client/api";
@@ -18,6 +20,8 @@ type Filter = "all" | CheckStatus;
 
 export function BulkChecker() {
   const bulk = useBulk();
+  const { mode } = useCheckMode();
+  const assisted = mode === "assisted";
   const results = useStore((s) => s.results);
   const checking = useStore((s) => s.checking);
   const settings = useStore((s) => s.settings);
@@ -39,17 +43,20 @@ export function BulkChecker() {
     () =>
       bulk.batch.map((u) => ({
         username: u,
-        result: bulk.done[u] ? results[u] : undefined,
+        // Assisted: show whatever is known (including earlier manual marks). Automatic: this run only.
+        result: assisted || bulk.done[u] ? results[u] : undefined,
         checking: !!checking[u],
       })),
-    [bulk.batch, bulk.done, results, checking],
+    [bulk.batch, bulk.done, results, checking, assisted],
   );
   const counts = useMemo(() => {
     const c = { all: rows.length, available: 0, taken: 0, unknown: 0 };
-    rows.forEach((r) => r.result && c[r.result.status]++);
+    rows.forEach((r) => (r.result ? c[r.result.status]++ : assisted && c.unknown++));
     return c;
   }, [rows]);
-  const visible = rows.filter((r) => filter === "all" || r.result?.status === filter);
+  const visible = rows.filter(
+    (r) => filter === "all" || r.result?.status === filter || (filter === "unknown" && !r.result && assisted),
+  );
 
   const availableNames = rows.filter((r) => r.result?.status === "available").map((r) => r.username);
 
@@ -65,11 +72,13 @@ export function BulkChecker() {
     const data = rows.filter((r) => r.result);
     if (!data.length) return toast("Nothing to export yet");
     const csv = toCsv(
-      ["username", "status", "verified_at", "attempted_at", "method", "confidence", "profile_url", "diagnostic_code", "details"],
+      ["username", "status", "checked_by", "verified_at", "marked_at", "attempted_at", "method", "confidence", "profile_url", "diagnostic_code", "details"],
       data.map(({ result: r }) => [
         r!.username,
         r!.status,
+        r!.method === "manual" ? "you (manual)" : r!.method === "none" ? "" : "automatic",
         verifiedAtOf(r!) ?? "",
+        r!.markedAt ?? "",
         r!.checkedAt,
         r!.method ?? "",
         r!.confidence === "none" ? "" : r!.confidence,
@@ -87,11 +96,17 @@ export function BulkChecker() {
         <CardHeader
           icon={<Layers className="h-4 w-4" />}
           title="Bulk Checker"
-          subtitle="One username per line. Duplicates are removed automatically."
+          subtitle={
+            assisted
+              ? "Paste names, then review them one by one on pump.fun. Progress is saved."
+              : "One username per line. Duplicates are removed automatically."
+          }
           right={
-            <Button size="sm" variant="ghost" onClick={() => setShowSettings((s) => !s)} aria-expanded={showSettings}>
-              <Settings2 className="h-4 w-4" /> Settings
-            </Button>
+            assisted ? undefined : (
+              <Button size="sm" variant="ghost" onClick={() => setShowSettings((s) => !s)} aria-expanded={showSettings}>
+                <Settings2 className="h-4 w-4" /> Settings
+              </Button>
+            )
           }
         />
         <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
@@ -109,7 +124,7 @@ export function BulkChecker() {
                 <b className="font-semibold text-ink tabular-nums">{parsed.length}</b> unique
               </span>
               {duplicates > 0 && <span>{duplicates} duplicates removed</span>}
-              {invalid > 0 && <span className="text-unknown">{invalid} invalid (will be skipped as unknown)</span>}
+              {invalid > 0 && <span className="text-unknown">{invalid} invalid (will stay unknown)</span>}
               {!bulk.input && (
                 <button className="font-medium text-ink underline-offset-2 hover:underline" onClick={() => bulk.setInput(EXAMPLE)}>
                   Use example list
@@ -117,7 +132,7 @@ export function BulkChecker() {
               )}
             </div>
 
-            {showSettings && (
+            {showSettings && !assisted && (
               <div className="grid gap-4 rounded-xl border border-line bg-surface/60 p-4 sm:grid-cols-2">
                 <Field label="Concurrency" hint={`${settings.concurrency} at once`}>
                   <input
@@ -159,7 +174,18 @@ export function BulkChecker() {
             )}
 
             <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
-              {running ? (
+              {assisted ? (
+                <>
+                  <Button variant="primary" onClick={start} disabled={!parsed.length}>
+                    <ListChecks className="h-4 w-4" /> Review {parsed.length || ""} usernames
+                  </Button>
+                  {bulk.batch.length > 0 && (
+                    <Button variant="ghost" onClick={bulk.clearBatch}>
+                      <Trash2 className="h-4 w-4" /> Clear list
+                    </Button>
+                  )}
+                </>
+              ) : running ? (
                 <Button variant="secondary" onClick={bulk.pause}>
                   <Pause className="h-4 w-4" /> Pause
                 </Button>
@@ -181,7 +207,8 @@ export function BulkChecker() {
           </div>
 
           <div className="flex min-w-0 flex-col">
-            {bulk.blocked && (
+            {assisted && <div className="mb-4"><ReviewDeck /></div>}
+            {bulk.blocked && !assisted && (
               <div className="mb-3">
                 <p className="mb-2 text-[13px] font-semibold text-unknown">
                   Paused: this problem would make every remaining check Unknown.
@@ -189,7 +216,7 @@ export function BulkChecker() {
                 <DiagnosticBox d={bulk.blocked} compact />
               </div>
             )}
-            <div className="mb-3">
+            <div className={cx("mb-3", assisted && "hidden")}>
               <div className="mb-2 flex items-center justify-between text-[12px] text-muted">
                 <span className="flex items-center gap-2">
                   {running && <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-avail" />}
@@ -225,10 +252,10 @@ export function BulkChecker() {
                   onClick={() =>
                     availableNames.length
                       ? copyText(availableNames.join("\n")).then(() => toast(`Copied ${availableNames.length} available`))
-                      : toast("No available usernames yet")
+                      : toast(assisted ? "No names marked “not found” yet" : "No available usernames yet")
                   }
                 >
-                  <Copy className="h-3.5 w-3.5" /> Copy available
+                  <Copy className="h-3.5 w-3.5" /> {assisted ? "Copy not found" : "Copy available"}
                 </Button>
                 <Button size="sm" onClick={exportCsv}>
                   <Download className="h-3.5 w-3.5" /> CSV
@@ -239,20 +266,40 @@ export function BulkChecker() {
             <div className="max-h-[60vh] min-h-48 overflow-y-auto overscroll-contain rounded-xl border border-line sm:h-72 lg:h-[22rem]">
               {visible.length === 0 ? (
                 <div className="flex h-full items-center justify-center p-6 text-center text-[13px] text-subtle">
-                  {rows.length ? "No results in this filter." : "Live results appear here as names are checked."}
+                  {rows.length
+                    ? "No results in this filter."
+                    : assisted
+                      ? "Your list appears here. Tap a name to review it."
+                      : "Live results appear here as names are checked."}
                 </div>
               ) : (
                 <ul className="divide-y divide-line">
                   {visible.slice(0, 1000).map((r) => (
-                    <li key={r.username} className="flex min-h-12 items-center justify-between gap-3 px-4">
-                      <a
-                        href={r.result?.profileUrl ?? profileUrlFor(r.username)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="min-w-0 flex-1 truncate py-3 font-mono text-[14px] hover:underline sm:py-2.5 sm:text-[13px]"
-                      >
-                        {r.username}
-                      </a>
+                    <li
+                      key={r.username}
+                      className={cx(
+                        "flex min-h-12 items-center justify-between gap-3 px-4",
+                        assisted && bulk.batch[bulk.reviewIndex] === r.username && "bg-surface",
+                      )}
+                    >
+                      {assisted ? (
+                        <button
+                          onClick={() => bulk.setReviewIndex(bulk.batch.indexOf(r.username))}
+                          className="min-w-0 flex-1 truncate py-3 text-left font-mono text-[14px] hover:underline sm:py-2.5 sm:text-[13px]"
+                          title="Review this name"
+                        >
+                          {r.username}
+                        </button>
+                      ) : (
+                        <a
+                          href={r.result?.profileUrl ?? profileUrlFor(r.username)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="min-w-0 flex-1 truncate py-3 font-mono text-[14px] hover:underline sm:py-2.5 sm:text-[13px]"
+                        >
+                          {r.username}
+                        </a>
+                      )}
                       <div className="flex shrink-0 items-center gap-3">
                         {r.result && !r.checking && (
                           <CheckedLabel r={r.result} className="hidden text-[11px] text-subtle sm:inline" />
@@ -261,13 +308,27 @@ export function BulkChecker() {
                           <StatusBadge status="checking" />
                         ) : r.result ? (
                           <span title={r.result.diagnostic?.message ?? r.result.reason} className="flex flex-col items-end gap-0.5">
-                            <StatusBadge status={r.result.status} />
+                            <StatusBadge status={r.result.status} manual={r.result.method === "manual"} />
                             {r.result.status === "unknown" && r.result.diagnostic && (
                               <span className="text-[11px] font-medium text-unknown">{r.result.diagnostic.label}</span>
                             )}
                           </span>
                         ) : (
-                          <span className="text-[11px] font-medium uppercase tracking-wide text-subtle">Queued</span>
+                          <span className="text-[11px] font-medium uppercase tracking-wide text-subtle">
+                            {assisted ? "To check" : "Queued"}
+                          </span>
+                        )}
+                        {assisted && (
+                          <a
+                            href={profileUrlFor(r.username)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={`Open ${r.username} on pump.fun`}
+                            title="Open on pump.fun"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-muted hover:bg-surface hover:text-ink sm:h-8 sm:w-8"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
                         )}
                       </div>
                     </li>

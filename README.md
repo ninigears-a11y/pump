@@ -1,19 +1,28 @@
 # Pump Username Checker
 
-Find your next identity on Pump.fun. Check one username, check hundreds in bulk, generate ideas, and get smart variations when a name is taken.
+A free tool for finding your next identity on Pump.fun. Generate username ideas, check names one by one or in bulk, and keep a history. It needs **no API keys, paid services or subscriptions**.
 
-The checker is built around one rule: **it never reports a name as available unless the evidence supports it.** Blocked, rate-limited, ambiguous or failed checks come back as **UNKNOWN**.
+## Free mode (default)
 
-## Features
+Pump.fun doesn't offer a public, unauthenticated way to look up usernames, and its public pages block servers with Cloudflare (see *How verification works*). So by default the app uses **assisted checking**:
 
-- **Single checker**: one large input that accepts `mrnom`, `@mrnom` or a full `https://pump.fun/profile/mrnom` URL. The result shows its confidence, when it was verified, and the evidence behind it.
-- **Bulk checker**: one name per line, de-duplicated automatically. You can set concurrency and the delay between requests, and pause, resume or stop a run. Results update live with a progress bar. You can filter by Available, Taken or Unknown, export to CSV, and copy all available names.
-- **Username generator** with 8 categories: Mr + Word, The + Word, crypto personalities, mysterious, developer, whale, community/goodwill, and short one-word names. It produces 10, 50, 100, 500 or 1,000 ideas, takes an optional keyword, and can skip names you already checked. Ideas go straight to the bulk checker with one click.
-- **Smart suggestions**: when a name is taken you get variations (`realmrdev`, `itsmrdev`, `themrdev`, `mrdevsol`, `mrdevx`, `mrdev_`, …). You can check one or all of them.
-- **Results history**: search, sort (recent / A–Z / Z–A), filter by status or favorites, and use the per-row actions: copy username, open profile, recheck, copy URL, favorite. History is kept across page refreshes in `localStorage`.
-- **Stats**: Total Checked, Available, Taken and Unknown.
-- **Optional server-side history** in SQLite through Node's built-in `node:sqlite`, with no native dependencies.
-- **Strict mode**: a name is only marked available when the public profile page also confirms it.
+1. **Single checker:** type a name and tap **Open pump.fun/profile/NAME**. Look at the page, come back, and tap **Exists**, **Not found** or **Can't tell**.
+2. **Bulk checker:** paste or generate a list and tap **Review N usernames**. A review card walks through the names one by one, with the Open button, three big mark buttons, auto-advance and progress.
+   - The list and your position are **saved**, so you can continue after iPhone Safari reloads the tab.
+   - On desktop you can use keyboard shortcuts: `O` open, `E` exists, `N` not found, `U` unsure, `←`/`→` move.
+3. **Labels:** manual results show as **EXISTS · you** or **NOT FOUND · you**, with a hand icon and a dashed border, and read "Checked by you 2m ago". They are never shown as automatically "verified". "Not found" means only that no profile page exists; reserved or banned names can still be unavailable.
+4. **Unknown:** anything nobody has checked, or marked "Can't tell", stays **UNKNOWN**.
+
+The generator, smart suggestions, favorites, search, sort, filters, history, CSV export (with a `checked_by` column) and copy actions all work in free mode. Every profile link uses `https://pump.fun/profile/USERNAME`.
+
+## Optional automatic checking
+
+| Option | How to turn it on | Status |
+| --- | --- | --- |
+| Official Pump.fun Developer API | Set `PUMP_API_KEY` (a free key for approved developers from [developers.pump.fun](https://developers.pump.fun)) | Works and is tested; off until you add a key |
+| In-browser experiment | Set `NEXT_PUBLIC_BROWSER_CHECK_URL` | **Off.** No public, unauthenticated, cross-origin method has been proven. Enable it only once one is. |
+
+When either option is on, checks run automatically with the same strict rules. Failures are UNKNOWN with a diagnostic, and the manual buttons stay available for anything unresolved.
 
 ## How verification works
 
@@ -65,7 +74,7 @@ Each provider returns one `Evidence` record: `found`, `not_found`, `blocked`, `r
 
 ### Limitations (please read)
 
-- **`PUMP_API_KEY` is required for real checks.** Without it the app makes **no** requests to Pump.fun, and every result is UNKNOWN with the diagnostic `OFFICIAL_API_KEY_MISSING`. The page shows setup steps. The unofficial, Cloudflare-protected sources are off by default (`PUMP_UNOFFICIAL_FALLBACK=1` turns them on, which is not recommended).
+- **Without `PUMP_API_KEY`** the app runs in free assisted mode and makes **no** requests to Pump.fun. If `/api/check` is called directly, it answers UNKNOWN with `OFFICIAL_API_KEY_MISSING`. The unofficial, Cloudflare-protected sources are off unless `PUMP_UNOFFICIAL_FALLBACK=1` is set, which is not recommended.
 
 - **Cloudflare decides whether checks work.** On many cloud hosts, Vercel included, Pump.fun may challenge every request, and then results will mostly be UNKNOWN. That is the honest result, not a bug. You will usually get better results running locally on a residential connection. The app never tries to evade the challenge.
 - **The API is undocumented.** It can change without notice. The classifier fails safe (unexpected shapes become UNKNOWN), and the provider can be swapped (see *Extending*).
@@ -112,7 +121,8 @@ Every variable is optional. See `.env.example`.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PUMP_API_BASE` | `https://frontend-api-v3.pump.fun` | Base URL of the user lookup API |
-| `PUMP_API_KEY` | *(unset)* | **Official Pump.fun API key** (`pf_live_…`). Server-side only. Never prefix it with `NEXT_PUBLIC_`. |
+| `PUMP_API_KEY` | *(unset)* | **Optional** official Pump.fun API key (`pf_live_…`), free for approved developers. Enables automatic checks. Server-side only. Never prefix it with `NEXT_PUBLIC_`. |
+| `NEXT_PUBLIC_BROWSER_CHECK_URL` | *(unset)* | Optional browser-check experiment (template containing `{username}`). Leave it unset until a public method is proven. |
 | `PUMP_OFFICIAL_API_BASE` | `https://api.pump.fun/v1` | Official API base (devnet: `https://api-devnet.pump.fun/v1`) |
 | `PUMP_UNOFFICIAL_FALLBACK` | `0` | Opt-in. `1` also tries the unofficial, Cloudflare-protected sources (not recommended) |
 | `PUMP_PROFILE_BASE` | `https://pump.fun/profile` | Profile URL base (links and page corroboration) |

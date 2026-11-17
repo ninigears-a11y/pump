@@ -13,7 +13,14 @@ export type CheckStatus = "available" | "taken" | "unknown";
 export type Confidence = "high" | "medium" | "low" | "none";
 
 /** Which verification method produced a definite answer. */
-export type VerificationMethod = "official-api" | "unofficial" | "none";
+/**
+ * official-api — Pump.fun Developer API (optional, needs a free approved key)
+ * browser      — optional in-browser experiment (off unless a public method is proven)
+ * unofficial   — opt-in unofficial server-side sources
+ * manual       — the USER looked at pump.fun/profile/NAME and marked the result
+ * none         — nothing was verified
+ */
+export type VerificationMethod = "official-api" | "browser" | "unofficial" | "manual" | "none";
 
 /** Machine-readable reason a username could not be verified. See diagnostics.ts. */
 export type DiagnosticCode =
@@ -36,7 +43,10 @@ export type DiagnosticCode =
   | "INVALID_USERNAME"
   | "CANCELLED"
   | "CHECKER_UNREACHABLE"
-  | "LOCAL_RATE_LIMIT";
+  | "LOCAL_RATE_LIMIT"
+  | "NOT_CHECKED"
+  | "MANUAL_UNSURE"
+  | "BROWSER_CHECK_FAILED";
 
 export interface Diagnostic {
   code: DiagnosticCode;
@@ -96,8 +106,10 @@ export interface CheckResult {
   profileUrl: string;
   /** When the check was attempted. */
   checkedAt: string;
-  /** When the status was actually verified. Only set for available/taken. */
+  /** When the status was verified automatically. Only set for automatic available/taken. */
   verifiedAt?: string;
+  /** When the user marked the result by hand (method "manual"). */
+  markedAt?: string;
   method: VerificationMethod;
   /** Why the username could not be verified. Only set for unknown. */
   diagnostic?: Diagnostic;

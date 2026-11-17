@@ -1,8 +1,8 @@
 import type { CheckResult, DiagnosticCode } from "@/lib/checker/types";
 import { makeDiagnostic } from "@/lib/checker/diagnostics";
 
-export const PROFILE_BASE = "https://pump.fun/profile";
-export const profileUrlFor = (u: string) => `${PROFILE_BASE}/${encodeURIComponent(u)}`;
+import { profileUrlFor } from "@/lib/assisted/manual";
+export { PROFILE_BASE, profileUrlFor } from "@/lib/assisted/manual";
 
 export type ClientCheckResult = CheckResult & { cooldownMs?: number };
 
@@ -55,8 +55,12 @@ export async function checkUsername(
   }
 }
 
-/** Results stored by older versions lack verifiedAt/method; derive them safely. */
-export function verifiedAtOf(r: Pick<CheckResult, "status" | "checkedAt" | "verifiedAt">): string | undefined {
-  if (r.status === "unknown") return undefined;
+/**
+ * When a result was verified AUTOMATICALLY. Manual marks and unknowns return undefined,
+ * so the UI never calls them "verified". (Results stored by older versions lack
+ * `method`; those were automatic.)
+ */
+export function verifiedAtOf(r: Pick<CheckResult, "status" | "checkedAt" | "verifiedAt" | "method">): string | undefined {
+  if (r.status === "unknown" || r.method === "manual" || r.method === "none") return undefined;
   return r.verifiedAt ?? r.checkedAt;
 }

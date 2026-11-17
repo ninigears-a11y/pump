@@ -6,6 +6,9 @@ import { store, useStore, type StoredResult } from "@/lib/client/store";
 import { copyText, downloadFile } from "@/lib/client/util";
 import { checkUsername, verifiedAtOf } from "@/lib/client/api";
 import { CheckedLabel } from "./Diagnostics";
+import { useCheckMode } from "@/lib/client/mode";
+import { useBulk } from "@/lib/client/bulk";
+import { checkInBrowser } from "@/lib/assisted/browserCheck";
 import { toCsv } from "@/lib/csv";
 import type { CheckStatus } from "@/lib/checker/types";
 import { Button, Card, CardHeader, IconButton, Segmented, StatusBadge, cx, useToast } from "./ui";
@@ -23,6 +26,8 @@ export function ResultsTable() {
   const [sort, setSort] = useState<Sort>("recent");
   const [limit, setLimit] = useState(PAGE);
   const toast = useToast();
+  const { mode } = useCheckMode();
+  const bulk = useBulk();
 
   const all = useMemo(() => Object.values(results), [results]);
   const counts = useMemo(
@@ -53,9 +58,12 @@ export function ResultsTable() {
   }, [all, q, filter, sort]);
 
   async function recheck(u: string) {
+    // Free mode: "recheck" means looking at the profile again in the review card.
+    if (mode === "assisted") return bulk.run([u]);
     store.setChecking([u], true);
     try {
-      store.upsert(await checkUsername(u, { force: true, strict }));
+      const r = mode === "browser" ? await checkInBrowser(u) : await checkUsername(u, { force: true, strict });
+      if (!(r.status === "unknown" && store.get().results[u]?.method === "manual")) store.upsert(r);
     } finally {
       store.setChecking([u], false);
     }
@@ -66,11 +74,13 @@ export function ResultsTable() {
     downloadFile(
       `pump-username-history-${new Date().toISOString().slice(0, 10)}.csv`,
       toCsv(
-        ["username", "status", "verified_at", "attempted_at", "method", "confidence", "profile_url", "diagnostic_code", "favorite", "details"],
+        ["username", "status", "checked_by", "verified_at", "marked_at", "attempted_at", "method", "confidence", "profile_url", "diagnostic_code", "favorite", "details"],
         rows.map((r) => [
           r.username,
           r.status,
+          r.method === "manual" ? "you (manual)" : r.method === "none" ? "" : "automatic",
           verifiedAtOf(r) ?? "",
+          r.markedAt ?? "",
           r.checkedAt,
           r.method ?? "",
           r.confidence === "none" ? "" : r.confidence,
@@ -183,7 +193,7 @@ export function ResultsTable() {
               <li key={r.username} className="px-5 py-3.5">
                 <div className="flex items-center justify-between gap-3">
                   <span className="truncate font-mono text-[14px] font-medium">{r.username}</span>
-                  <StatusBadge status={checking[r.username] ? "checking" : r.status} />
+                  <StatusBadge status={checking[r.username] ? "checking" : r.status} manual={r.method === "manual"} />
                 </div>
                 {r.status === "unknown" && r.diagnostic && !checking[r.username] && (
                   <p className="mt-1 text-[12px] leading-4 text-unknown">
@@ -221,7 +231,7 @@ function Row({ r, checking, onRecheck }: { r: StoredResult; checking: boolean; o
       </td>
       <td className="px-3 py-3">
         <span title={r.diagnostic ? `${r.diagnostic.code}: ${r.diagnostic.message}` : r.reason} className="flex flex-col items-start gap-0.5">
-          <StatusBadge status={checking ? "checking" : r.status} />
+          <StatusBadge status={checking ? "checking" : r.status} manual={r.method === "manual"} />
           {r.status === "unknown" && r.diagnostic && !checking && (
             <span className="text-[11px] font-medium text-unknown">{r.diagnostic.label}</span>
           )}
@@ -251,6 +261,8 @@ function Row({ r, checking, onRecheck }: { r: StoredResult; checking: boolean; o
 
 function Actions({ r, checking, onRecheck }: { r: StoredResult; checking: boolean; onRecheck: (u: string) => void }) {
   const toast = useToast();
+  const { mode } = useCheckMode();
+  const bulk = useBulk();
   return (
     <div className="flex items-center gap-0.5">
       <IconButton

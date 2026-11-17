@@ -4,12 +4,14 @@ import { useMemo } from "react";
 import { Sparkles } from "lucide-react";
 import { suggestVariations } from "@/lib/suggestions";
 import { useBulk } from "@/lib/client/bulk";
+import { useCheckMode } from "@/lib/client/mode";
 import { useStore } from "@/lib/client/store";
 import { Button, cx } from "./ui";
 
 export function Suggestions({ username }: { username: string }) {
   const results = useStore((s) => s.results);
   const bulk = useBulk();
+  const { mode } = useCheckMode();
   const ideas = useMemo(() => suggestVariations(username, 16), [username]);
   if (!ideas.length) return null;
 
@@ -20,7 +22,7 @@ export function Suggestions({ username }: { username: string }) {
           <Sparkles className="h-4 w-4" aria-hidden /> Try a variation
         </div>
         <Button size="sm" variant="primary" onClick={() => bulk.run(ideas)}>
-          Check all {ideas.length} suggestions
+          {mode === "assisted" ? "Review" : "Check"} all {ideas.length} suggestions
         </Button>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">

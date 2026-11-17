@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Copy, Send, Wand2 } from "lucide-react";
 import { CATEGORY_LABELS, generateUsernames, type GeneratorCategory } from "@/lib/generator";
 import { useBulk } from "@/lib/client/bulk";
+import { useCheckMode } from "@/lib/client/mode";
 import { useStore } from "@/lib/client/store";
 import { copyText } from "@/lib/client/util";
 import { Button, Card, CardHeader, cx, useToast } from "./ui";
@@ -19,6 +20,7 @@ export function Generator() {
   const [ideas, setIdeas] = useState<string[]>([]);
   const results = useStore((s) => s.results);
   const bulk = useBulk();
+  const { mode } = useCheckMode();
   const toast = useToast();
 
   const toggle = (c: GeneratorCategory) =>
@@ -135,7 +137,7 @@ export function Generator() {
                   variant="primary"
                   onClick={() => bulk.run(ideas)}
                 >
-                  <Send className="h-3.5 w-3.5" /> Check all
+                  <Send className="h-3.5 w-3.5" /> {mode === "assisted" ? "Review all" : "Check all"}
                 </Button>
               </div>
             </div>

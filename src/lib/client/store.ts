@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import type { CheckResult } from "@/lib/checker/types";
+import { manualResult, type ManualVerdict } from "@/lib/assisted/manual";
 
 export interface StoredResult extends CheckResult {
   favorite?: boolean;
@@ -46,22 +47,39 @@ function hydrate() {
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
-function persist() {
-  if (typeof window === "undefined") return;
+let dirty = false;
+
+function writeNow() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      window.localStorage.setItem(KEY, JSON.stringify({ results: state.results, settings: state.settings }));
-    } catch {
-      /* quota exceeded or blocked */
-    }
-  }, 250);
+  if (!dirty || typeof window === "undefined") return;
+  dirty = false;
+  try {
+    window.localStorage.setItem(KEY, JSON.stringify({ results: state.results, settings: state.settings }));
+  } catch {
+    /* quota exceeded or blocked */
+  }
 }
 
-function set(next: Partial<State>, save = true) {
+/** Debounced save (bulk automatic runs update often); `immediate` for user actions. */
+function persist(immediate = false) {
+  if (typeof window === "undefined") return;
+  dirty = true;
+  if (immediate) return writeNow();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(writeNow, 250);
+}
+
+// iOS Safari may discard/reload a background tab (e.g. while the user looks at pump.fun):
+// flush pending writes as soon as the page is hidden.
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", writeNow);
+  document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && writeNow());
+}
+
+function set(next: Partial<State>, save: boolean | "now" = true) {
   state = { ...state, ...next };
   listeners.forEach((l) => l());
-  if (save) persist();
+  if (save) persist(save === "now");
 }
 
 export const store = {
@@ -79,6 +97,12 @@ export const store = {
     const { [r.username]: _, ...checking } = state.checking;
     set({ results: { ...state.results, [r.username]: { ...r, favorite: prev?.favorite } }, checking });
   },
+  /** Record what the user saw on pump.fun/profile/NAME (manual check). */
+  mark(username: string, verdict: ManualVerdict) {
+    const r = manualResult(username, verdict);
+    const prev = state.results[r.username];
+    set({ results: { ...state.results, [r.username]: { ...r, favorite: prev?.favorite } } }, "now");
+  },
   setChecking(usernames: string[], on: boolean) {
     const checking = { ...state.checking };
     for (const u of usernames) {
@@ -90,17 +114,17 @@ export const store = {
   toggleFavorite(username: string) {
     const r = state.results[username];
     if (!r) return;
-    set({ results: { ...state.results, [username]: { ...r, favorite: !r.favorite } } });
+    set({ results: { ...state.results, [username]: { ...r, favorite: !r.favorite } } }, "now");
   },
   remove(username: string) {
     const { [username]: _, ...rest } = state.results;
-    set({ results: rest });
+    set({ results: rest }, "now");
   },
   clear(keepFavorites = true) {
     const results = keepFavorites
       ? Object.fromEntries(Object.entries(state.results).filter(([, r]) => r.favorite))
       : {};
-    set({ results });
+    set({ results }, "now");
   },
   updateSettings(s: Partial<Settings>) {
     set({ settings: { ...state.settings, ...s } });

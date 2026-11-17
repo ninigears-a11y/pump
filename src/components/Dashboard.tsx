@@ -2,7 +2,8 @@
 
 import { useCallback, useState } from "react";
 import { Layers, Search, ShieldCheck, Wand2 } from "lucide-react";
-import { SetupStatus } from "./Diagnostics";
+import { ModeStatus } from "./Diagnostics";
+import { ModeProvider } from "@/lib/client/mode";
 import { BulkProvider, useBulk } from "@/lib/client/bulk";
 import { BulkChecker } from "./BulkChecker";
 import { Generator } from "./Generator";
@@ -22,9 +23,11 @@ export function Dashboard() {
   }, []);
   return (
     <ToastProvider>
-      <BulkProvider onFocus={focusBulk}>
-        <Inner tab={tab} setTab={setTab} />
-      </BulkProvider>
+      <ModeProvider>
+        <BulkProvider onFocus={focusBulk}>
+          <Inner tab={tab} setTab={setTab} />
+        </BulkProvider>
+      </ModeProvider>
     </ToastProvider>
   );
 }
@@ -48,7 +51,7 @@ function Inner({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
         </div>
       </header>
 
-      <SetupStatus />
+      <ModeStatus />
 
       <StatsBar />
 

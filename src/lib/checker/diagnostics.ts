@@ -5,10 +5,28 @@ const VERCEL_ENV_FIX =
 
 const CATALOG: Record<DiagnosticCode, Omit<Diagnostic, "code">> = {
   OFFICIAL_API_KEY_MISSING: {
-    label: "API key not set",
-    message: "The server has no Pump.fun API key, so no authorized check can be made.",
-    fix: `Apply for a key at developers.pump.fun (sign in with Pump.fun, request the profiles.read scope). Once approved, create a key. ${VERCEL_ENV_FIX}`,
+    label: "Not checked",
+    message: "Automatic checking is not enabled on this server (it is optional).",
+    fix: "Open the profile on pump.fun and mark what you see. Optional: add a free Pump.fun developer key (PUMP_API_KEY) to enable automatic checks.",
     blocking: true,
+  },
+  NOT_CHECKED: {
+    label: "Not checked",
+    message: "Nobody has looked at this profile yet.",
+    fix: "Open the profile on pump.fun and mark Exists or Not found.",
+    blocking: false,
+  },
+  MANUAL_UNSURE: {
+    label: "Unsure",
+    message: "You looked at the profile but could not tell whether it exists.",
+    fix: "Try again later, or open the profile in a different browser.",
+    blocking: false,
+  },
+  BROWSER_CHECK_FAILED: {
+    label: "Browser check failed",
+    message: "The automatic in-browser check could not get an answer.",
+    fix: "Open the profile on pump.fun and mark what you see.",
+    blocking: false,
   },
   API_KEY_REQUIRED: {
     label: "API key not sent",

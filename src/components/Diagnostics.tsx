@@ -1,30 +1,59 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, FlaskConical, Hand } from "lucide-react";
+import { useCheckMode } from "@/lib/client/mode";
 import type { Diagnostic } from "@/lib/checker/types";
 import { verifiedAtOf } from "@/lib/client/api";
 import { timeAgo } from "@/lib/client/util";
 import type { StoredResult } from "@/lib/client/store";
 import { cx } from "./ui";
 
-/** "Verified 2m ago" only when something was actually verified; otherwise "Attempted …, not verified". */
+/**
+ * Honest time label:
+ *  - automatic AVAILABLE/TAKEN -> "Verified 2m ago"
+ *  - manual marks              -> "Checked by you 2m ago"
+ *  - everything else           -> "Not verified · tried 2m ago"
+ */
 export function CheckedLabel({ r, className }: { r: StoredResult; className?: string }) {
+  if (r.method === "manual" && r.status !== "unknown") {
+    const at = r.markedAt ?? r.checkedAt;
+    return (
+      <span className={className} title={`Marked by you ${new Date(at).toLocaleString()}`}>
+        Checked by you {timeAgo(at)}
+      </span>
+    );
+  }
   const v = verifiedAtOf(r);
-  return v ? (
-    <span className={className} title={`Verified ${new Date(v).toLocaleString()}`}>
-      Verified {timeAgo(v)}
-    </span>
-  ) : (
+  if (v) {
+    return (
+      <span className={className} title={`Verified ${new Date(v).toLocaleString()}`}>
+        Verified {timeAgo(v)}
+      </span>
+    );
+  }
+  const label = r.diagnostic?.code === "NOT_CHECKED" || r.diagnostic?.code === "OFFICIAL_API_KEY_MISSING" ? "Not checked yet" : `Not verified · tried ${timeAgo(r.checkedAt)}`;
+  return (
     <span className={cx("text-unknown", className)} title={`Attempted ${new Date(r.checkedAt).toLocaleString()}`}>
-      Not verified · tried {timeAgo(r.checkedAt)}
+      {label}
     </span>
   );
 }
 
 export function methodLabel(r: StoredResult): string {
   if (r.status === "unknown") return "";
-  return r.method === "official-api" ? "Official Pump.fun API" : r.method === "unofficial" ? "Unofficial source" : "";
+  switch (r.method) {
+    case "official-api":
+      return "Official Pump.fun API";
+    case "browser":
+      return "Automatic browser check";
+    case "unofficial":
+      return "Unofficial source";
+    case "manual":
+      return "Manual check on pump.fun";
+    default:
+      return "";
+  }
 }
 
 /** Full explanation box for an UNKNOWN result. */
@@ -51,83 +80,53 @@ interface Health {
   probe?: { ok: boolean; diagnostic?: Diagnostic; latencyMs: number; checkedAt: string };
 }
 
-/** Top-of-page status: is real checking actually working right now? */
-export function SetupStatus() {
+/**
+ * Small status line under the title. Free (assisted) mode is the normal state and shows a
+ * neutral note — no warnings. Only an optional integration that is configured but failing
+ * shows its diagnostic.
+ */
+export function ModeStatus() {
+  const { mode, ready } = useCheckMode();
   const [h, setH] = useState<Health | null>(null);
-  const [failed, setFailed] = useState(false);
   useEffect(() => {
+    if (mode !== "server") return;
     fetch("/api/health?probe=1", { cache: "no-store" })
       .then((r) => r.json())
       .then(setH)
-      .catch(() => setFailed(true));
-  }, []);
+      .catch(() => setH(null));
+  }, [mode]);
 
-  if (failed) return null;
-  if (!h) {
+  if (!ready) return null;
+  if (mode === "assisted") {
     return (
-      <div className="mb-6 flex items-center gap-2 text-[13px] text-muted">
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Checking connection to Pump.fun…
+      <div className="mb-6 inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-[12px] font-medium text-muted">
+        <Hand className="h-3.5 w-3.5 shrink-0 text-ink" aria-hidden />
+        <span>Free mode · open each profile on pump.fun and mark what you see</span>
       </div>
     );
   }
-  if (h.verification === "official" && h.probe?.ok) {
+  if (mode === "browser") {
+    return (
+      <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-[12px] font-medium text-muted">
+        <FlaskConical className="h-3.5 w-3.5 text-ink" aria-hidden /> Automatic browser check (experimental)
+      </div>
+    );
+  }
+  if (!h) return null;
+  if (h.probe?.ok) {
     return (
       <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-avail-line bg-avail-bg px-3 py-1.5 text-[12px] font-medium text-avail">
         <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-        Official Pump.fun API connected · {h.probe.latencyMs} ms
+        Automatic checks · official Pump.fun API · {h.probe.latencyMs} ms
       </div>
     );
   }
-  const d = h.probe?.diagnostic;
-  const unconfigured = h.verification === "unconfigured" || d?.code === "OFFICIAL_API_KEY_MISSING";
-  return (
-    <div className="mb-6 rounded-2xl border border-unknown-line bg-unknown-bg/60 p-4 sm:p-5">
-      <div className="flex items-start gap-3">
-        {unconfigured ? (
-          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-unknown" aria-hidden />
-        ) : (
-          <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-taken" aria-hidden />
-        )}
-        <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-semibold text-ink">
-            {unconfigured
-              ? "Username checking is not set up yet"
-              : h.verification === "unofficial"
-                ? "Running without the official API"
-                : "The official Pump.fun API is not accepting requests"}
-          </p>
-          {unconfigured ? (
-            <>
-              <p className="mt-1 text-[13px] leading-5 text-ink/75">
-                Pump.fun only allows username checks through its official API, which needs an approved key. Until one is
-                added, every result is <b>Unknown</b>. Nothing is guessed.
-              </p>
-              <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-[13px] leading-5 text-ink/80">
-                <li>
-                  Open{" "}
-                  <a className="font-medium underline" href="https://developers.pump.fun" target="_blank" rel="noopener noreferrer">
-                    developers.pump.fun
-                  </a>
-                  , sign in with Pump.fun and apply (request the <code className="font-mono">profiles.read</code> scope).
-                </li>
-                <li>When approved, create a key (starts with <code className="font-mono">pf_live_</code>) and copy it.</li>
-                <li>
-                  In Vercel: your project → Settings → Environment Variables → add <code className="font-mono">PUMP_API_KEY</code>.
-                </li>
-                <li>Deployments → ⋯ → Redeploy. This banner turns green when it works.</li>
-              </ol>
-            </>
-          ) : d ? (
-            <div className="mt-3">
-              <DiagnosticBox d={d} compact />
-            </div>
-          ) : (
-            <p className="mt-1 text-[13px] text-ink/75">
-              Results come from unofficial Pump.fun sources that Cloudflare often blocks, so many will be Unknown.
-            </p>
-          )}
-        </div>
-      </div>
+  return h.probe?.diagnostic ? (
+    <div className="mb-6">
+      <p className="mb-2 text-[13px] font-semibold text-ink">
+        The optional Pump.fun API key is configured but not working. Manual checking still works.
+      </p>
+      <DiagnosticBox d={h.probe.diagnostic} compact />
     </div>
-  );
+  ) : null;
 }
